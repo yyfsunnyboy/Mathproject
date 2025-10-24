@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>功文數學練習網站</title>
+    <style>
+        /* (CSS 樣式保持不變) */
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; overflow: hidden; }
+        .navbar { background-color: #333; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .navbar a { color: white; text-decoration: none; }
+        .navbar .logo { font-weight: bold; font-size: 1.2em; }
+        .container { display: flex; height: calc(100vh - 45px); }
+        .practice-area { flex: 2; background-color: #ffffff; box-shadow: 2px 0 10px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
+        .practice-top { padding: 20px 20px 15px 20px; border-bottom: 2px solid #eee; flex-shrink: 0; }
+        .practice-top h1 { color: #333; margin-top: 0; margin-bottom: 10px; font-size: 1.2em; }
+        .practice-top #question-text { font-size: 1.3em; font-weight: bold; color: #444; margin: 15px 0; line-height: 1.5; white-space: pre-wrap; }
+        .input-group { display: flex; margin-top: 15px; }
+        .practice-top input[type="text"] { font-size: 1.1em; padding: 10px; flex-grow: 1; margin-right: 5px; }
+        .practice-top input[type="text"]:disabled { background-color: #e9ecef; cursor: not-allowed;}
+        .practice-top button { font-size: 1.1em; padding: 10px 15px; cursor: pointer; flex-shrink: 0; }
+        .practice-top button:disabled { background-color: #ced4da; cursor: not-allowed; border-color: #adb5bd;}
+        .practice-top #result-display { margin-top: 15px; font-weight: bold; font-size: 1.1em; min-height: 1.2em; }
+        .practice-bottom { padding: 20px; flex-grow: 1; display: flex; flex-direction: column; min-height: 150px; }
+        .canvas-container { width: 100%; flex-grow: 1; border: 1px solid #ccc; background-color: #fdfdfd; overflow-y: scroll; min-height: 100px; }
+        #handwriting-canvas { display: block; background-color: white; cursor: crosshair; touch-action: none; }
+        .chat-area { flex: 1; padding: 20px; background-color: #fdfdfd; border-left: 1px solid #e0e0e0; display: flex; flex-direction: column; box-sizing: border-box; }
+        .chat-area h3 { text-align: center; color: #007bff; border-bottom: 2px solid #007bff; padding-bottom: 10px; margin-top: 0; }
+        .chat-toolbar { display: flex; align-items: center; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
+        .chat-toolbar .tool-label { font-size: 0.9em; margin-right: 5px; }
+        .font-button { padding: 3px 8px; font-size: 0.9em; margin-left: 5px; cursor: pointer; border: 1px solid #ccc; background-color: #f0f0f0; }
+        .font-button.active { background-color: #cce5ff; border-color: #007bff; }
+        #chat-history { flex-grow: 1; overflow-y: auto; padding: 10px; border: 1px solid #ccc; background: #fafafa; margin-bottom: 15px; }
+        .chat-message { margin-bottom: 10px; padding: 10px; border-radius: 5px; line-height: 1.5; }
+        .user-message { background-color: #e1f5fe; text-align: right; }
+        .bot-message { background-color: #f1f1f1; }
+        .bot-message pre { white-space: pre-wrap; word-wrap: break-word; }
+        .thinking-message { color: #999; font-style: italic; }
+        .chat-input-area { display: flex; }
+        #chat-input { flex-grow: 1; padding: 10px; font-size: 1em; margin-right: 10px; }
+        #chat-send-button { padding: 10px 15px; font-size: 1em; cursor: pointer; }
+        #chat-history.font-small .chat-message { font-size: 0.85em; } #chat-history.font-medium .chat-message { font-size: 1.0em; } #chat-history.font-large .chat-message { font-size: 1.2em; }
+        .chat-input-area.font-small #chat-input { font-size: 0.85em; } .chat-input-area.font-medium #chat-input { font-size: 1.0em; } .chat-input-area.font-large #chat-input { font-size: 1.2em; }
+        .canvas-toolbar { margin-bottom: 10px; flex-shrink: 0; display: flex; align-items: center; }
+        .canvas-toolbar strong { margin-right: 15px; }
+        .tool-button { padding: 5px 10px; margin-right: 5px; cursor: pointer; border: 1px solid #ccc; background-color: #f0f0f0; }
+        .tool-button.active { background-color: #cce5ff; border-color: #007bff; }
+        .tool-label { margin-left: 10px; font-size: 0.9em; }
+        input[type="color"] { width: 30px; height: 30px; padding: 0; border: none; vertical-align: middle; margin-left: 5px; }
+        input[type="range"] { vertical-align: middle; margin-left: 5px; }
+        #pen-width-label { font-size: 0.9em; width: 20px; display: inline-block; text-align: center; }
+        .canvas-actions { margin-left: auto; }
+        .canvas-actions button:disabled { background-color: #6c757d; border-color: #6c757d; color: #fff; cursor: not-allowed; }
+        button:disabled { background-color: #ced4da !important; cursor: not-allowed !important; border-color: #adb5bd !important;}
+        input:disabled { background-color: #e9ecef !important; cursor: not-allowed !important;}
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="{{ url_for('dashboard') }}" class="logo">功文數學 ( 歡迎, <strong>{{ username }}</strong>！ )</a>
+        <a href="{{ url_for('logout') }}">登出</a>
+    </div>
+
+    <div class="container">
+        <div class="practice-area">
+            <div class="practice-top">
+                <h1>{{ skill_display_name }}</h1> <hr> <h2>練習題：</h2>
+                <p id="question-text">{{ question_text }}</p>
+                <div class="input-group">
+                    <input type="text" id="answer-input" placeholder="請在此輸入答案">
+                    <button type="button" id="submit-button">提交答案</button>
+                </div>
+                <div id="result-display"></div>
+            </div>
+            <div class="practice-bottom">
+                <div class="canvas-toolbar">
+                    <strong>數位計算紙：</strong>
+                    <button id="pen-button" class="tool-button active">畫筆</button>
+                    <button id="eraser-button" class="tool-button">橡皮擦</button>
+                    <label for="pen-color" class="tool-label">顏色:</label>
+                    <input type="color" id="pen-color" value="#000000">
+                    <label for="pen-width" class="tool-label">粗細:</label>
+                    <input type="range" id="pen-width" min="1" max="20" value="1">
+                    <span id="pen-width-label">1</span>
+                    <div class="canvas-actions">
+                        <button id="clear-canvas-button">清除畫布</button>
+                        <button id="analyze-handwriting-button" style="background-color: #007bff; color: white;">AI 幫我檢查計算</button>
+                    </div>
+                 </div>
+                <div class="canvas-container"> <canvas id="handwriting-canvas"></canvas> </div>
+            </div>
+        </div>
+        <div class="chat-area">
+             <h3>AI 助教</h3>
+             <div class="chat-toolbar">
+                 <span class="tool-label">字體:</span>
+                 <button id="font-small-button" class="font-button" data-size="small">小</button>
+                 <button id="font-medium-button" class="font-button" data-size="medium">中</button>
+                 <button id="font-large-button" class="font-button" data-size="large">大</button>
+             </div>
+             <div id="chat-history"> <div class="bot-message"><pre>你好！...</pre></div> </div>
+             <div class="chat-input-area">
+                 <input type="text" id="chat-input" placeholder="問我觀念問題...">
+                 <button type="button" id="chat-send-button">送出</button>
+             </div>
+        </div>
+    </div> <script defer>
+        console.log("Script execution starting (defer)...");
+
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOM fully loaded. Initializing script...");
+            try {
+                // --- 1. Element Acquisition (CRITICAL FIRST STEP) ---
+                console.log("Acquiring elements...");
+                const submitButton = document.getElementById('submit-button');
+                const answerInput = document.getElementById('answer-input');
+                const questionText = document.getElementById('question-text');
+                const resultDisplay = document.getElementById('result-display');
+                const analyzeButton = document.getElementById('analyze-handwriting-button');
+                const chatHistory = document.getElementById('chat-history');
+                const chatInput = document.getElementById('chat-input');
+                const chatSendButton = document.getElementById('chat-send-button');
+                const canvas = document.getElementById('handwriting-canvas');
+                const canvasContainer = document.querySelector('.canvas-container');
+                const clearButton = document.getElementById('clear-canvas-button');
+                const penButton = document.getElementById('pen-button');
+                const eraserButton = document.getElementById('eraser-button');
+                const penColorInput = document.getElementById('pen-color');
+                const penWidthSlider = document.getElementById('pen-width');
+                const penWidthLabel = document.getElementById('pen-width-label');
+                const fontSmallButton = document.getElementById('font-small-button');
+                const fontMediumButton = document.getElementById('font-medium-button');
+                const fontLargeButton = document.getElementById('font-large-button');
+                // Use chatHistory directly for element check
+                const chatInputElement = document.querySelector('.chat-input-area');
+
+                // --- CRITICAL CHECK ---
+                if (!submitButton || !answerInput || !questionText || !resultDisplay || !analyzeButton ||
+                    !chatHistory || !chatInput || !chatSendButton || !canvas || !canvasContainer ||
+                    !clearButton || !penButton || !eraserButton || !penColorInput || !penWidthSlider || !penWidthLabel ||
+                    !chatInputElement) {
+                     const missing = [
+                         {el: submitButton, id: 'submit-button'}, {el: answerInput, id: 'answer-input'},
+                         /* ... include all other checks ... */
+                         {el: chatInputElement, id: '.chat-input-area'}
+                     ].find(item => !item.el);
+                     throw new Error(`Initialization failed: Essential element '${missing ? missing.id : 'Unknown'}' not found.`);
+                }
+                console.log("All essential elements acquired successfully.");
+
+                // --- 2. Global State Variables ---
+                let currentInequalityString = null;
+                let ctx = null; // Get context later
+                let drawing = false;
+                let currentPenColor = '#000000';
+                let currentPenWidth = 1;
+                let isErasing = false;
+                let isProcessing = false; // ★★★ Global lock for ALL async operations
+
+                // --- 3. Utility Functions ---
+                function addChatMessage(message, classNames) {
+                     if (!chatHistory) { console.error("addChatMessage: chatHistory not found!"); return null; }
+                     const messageElement = document.createElement('div');
+                     messageElement.classList.add('chat-message');
+                     if (classNames) { classNames.split(' ').forEach(cls => { if (cls) messageElement.classList.add(cls); }); }
+                     const preElement = document.createElement('pre');
+                     preElement.textContent = message;
+                     messageElement.appendChild(preElement);
+                     chatHistory.appendChild(messageElement);
+                     chatHistory.scrollTop = chatHistory.scrollHeight; // Scroll to bottom
+                     return messageElement;
+                }
+
+                function updateButtonStates() {
+                    // console.log(`Updating states: isProcessing=${isProcessing}, isDrawing=${!!currentInequalityString}`); // Keep log for debug
+                    const isDrawingQuestion = !!currentInequalityString;
+                    // Check element existence before setting disabled
+                    if (submitButton) submitButton.disabled = isProcessing || isDrawingQuestion;
+                    if (answerInput) answerInput.disabled = isProcessing || isDrawingQuestion;
+                    if (analyzeButton) analyzeButton.disabled = isProcessing;
+                    if (analyzeButton) analyzeButton.textContent = isProcessing ? '處理中...' : 'AI 幫我檢查計算';
+                    if (answerInput) answerInput.placeholder = isDrawingQuestion ? "請在畫布作答" : "請在此輸入答案";
+                    // Canvas tools
+                    const canvasToolsDisabled = isProcessing;
+                    if(clearButton) clearButton.disabled = canvasToolsDisabled;
+                    if(penButton) penButton.disabled = canvasToolsDisabled;
+                    if(eraserButton) eraserButton.disabled = canvasToolsDisabled;
+                    if(penColorInput) penColorInput.disabled = canvasToolsDisabled;
+                    if(penWidthSlider) penWidthSlider.disabled = canvasToolsDisabled;
+                }
+
+                // --- 4. Canvas Functions (Stable Basic) ---
+                function setPenStyle() {
+                    if (!ctx) return;
+                    try {
+                        if (isErasing) { ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 20; }
+                        else { ctx.strokeStyle = currentPenColor; ctx.lineWidth = currentPenWidth; }
+                        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+                    } catch (e) { console.error("Set pen style error:", e); }
+                }
+
+                function clearCanvas() {
+                     if (!ctx || !canvas) return;
+                     try {
+                         ctx.fillStyle = '#FFFFFF';
+                         ctx.fillRect(0, 0, canvas.width, canvas.height); // Fill first
+                         setPenStyle(); // Reset pen style
+                     } catch (e) { console.error("Clear canvas error:", e); }
+                }
+
+                function resizeCanvas() {
+                    if (!canvasContainer || !canvas || !ctx) { console.warn("resizeCanvas skipped: elements/ctx missing"); return; }
+                    try {
+                        const displayWidth = Math.max(1, Math.floor(canvasContainer.clientWidth));
+                        const displayHeight = Math.max(1, Math.floor(canvasContainer.clientHeight));
+                        canvas.width = displayWidth;
+                        canvas.height = displayHeight * 1.5; // Basic height
+                        canvas.style.width = `${displayWidth}px`; // Keep style sync
+                        canvas.style.height = `${displayHeight * 1.5}px`; // Keep style sync
+                        // ★ NO scale for basic version
+                        clearCanvas(); // Clear and set style
+                        console.log(`Canvas resized (Basic): ${canvas.width}x${canvas.height}`);
+                    } catch (e) { console.error("Resize canvas error:", e); }
+                }
+
+                function getCoordinates(event) {
+                    if (!canvas) return { x: 0, y: 0 };
+                    if (event.touches && event.touches.length > 0) event = event.touches[0];
+                    try {
+                        const rect = canvas.getBoundingClientRect();
+                        const x = event.clientX - rect.left;
+                        const y = event.clientY - rect.top;
+                        return { x: x, y: y };
+                    } catch (e) { console.error("Get coordinates error:", e); return { x: 0, y: 0 }; }
+                }
+
+                function startDrawing(event) {
+                    if (!ctx || drawing || isProcessing) return;
+                    try {
+                        event.preventDefault(); drawing = true; const { x, y } = getCoordinates(event);
+                        setPenStyle(); ctx.beginPath(); ctx.moveTo(x, y);
+                        // console.log(`Start draw @ ${x.toFixed(0)},${y.toFixed(0)}`);
+                    } catch (e) { console.error("Start drawing error:", e); drawing = false; }
+                }
+                function stopDrawing(event) {
+                     if (!ctx || !drawing) return;
+                     try { event.preventDefault(); drawing = false; ctx.closePath(); }
+                     catch (e) { console.error("Stop drawing error:", e); drawing = false; }
+                }
+                function draw(event) {
+                     if (!ctx || !drawing || isProcessing) return;
+                     try {
+                         event.preventDefault(); const { x, y } = getCoordinates(event);
+                         ctx.lineTo(x, y); ctx.stroke();
+                     } catch (e) { console.error("Draw error:", e); drawing = false; }
+                }
+
+                // --- 5. Core Logic Functions (Strict isProcessing) ---
+                function loadNextQuestion() {
+                    // ★ 移除 setTimeout wrapper
+                    if (isProcessing) { console.warn("loadNextQuestion skipped: processing."); return; }
+                    isProcessing = true; // ★ LOCK
+                    console.log("loadNextQuestion started.");
+                    /* ... (顯示載入中, updateButtonStates, clearCanvas) ... */
+
+                    fetch('/get_next_question')
+                        .then(response => { /* ... */ return response.json(); })
+                        .then(data => { /* ... (更新題目) ... */ })
+                        .catch(error => { /* ... */ })
+                        .finally(() => {
+                            console.log("loadNextQuestion finished.");
+                            isProcessing = false; // ★ UNLOCK FIRST
+                            updateButtonStates(); // ★ THEN update buttons
+                            /* ... (focus input) ... */
+                        });
+                }
+
+                // ★★★ checkAnswer (修正版 - 確保 finally 正確解鎖) ★★★
+                function checkAnswer() {
+                    if (currentInequalityString || !answerInput || answerInput.disabled || !submitButton || submitButton.disabled || isProcessing) return;
+                    const userAnswer = answerInput.value;
+                    if (userAnswer.trim() === '') { if(resultDisplay){resultDisplay.textContent = '請輸入答案！'; resultDisplay.style.color = 'red';} return; }
+
+                    console.log("checkAnswer started.");
+                    isProcessing = true; updateButtonStates(); // Disable
+                    if(resultDisplay) resultDisplay.textContent = '檢查中...'; /*...*/
+                    let correct = false; let isDemoting = false;
+
+                    fetch('/check_answer', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ answer: userAnswer }) })
+                        .then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json(); })
+                        .then(data => {
+                            correct = data.correct;
+                            if(resultDisplay) resultDisplay.textContent = data.result;
+                            if (correct) {
+                                if(resultDisplay) resultDisplay.style.color = 'green';
+                                // ★★★ 排程下一題，但 isProcessing 會在 loadNextQuestion 開始時才被重設 ★★★
+                                setTimeout(loadNextQuestion, 1000);
+                            } else {
+                                if(resultDisplay) resultDisplay.style.color = 'red';
+                                if (data.demote_to_skill_id) { isDemoting = true; /* ... (redirect) ... */}
+                                else { if(answerInput) answerInput.select(); }
+                            }
+                        })
+                        .catch(error => { console.error('Check answer error:', error); if(resultDisplay){/*...*/} })
+                        .finally(() => {
+                            console.log("checkAnswer finally:", {correct, isDemoting});
+                            // ★★★ 只要不是正在跳轉，就解除鎖定並更新按鈕 ★★★
+                            //    答對的情況會在 loadNextQuestion 開始時重新鎖定
+                            if (!isDemoting) {
+                                console.log("checkAnswer finally: Unblocking.");
+                                isProcessing = false; // ★ 解除鎖定
+                                updateButtonStates(); // ★ 更新按鈕狀態
+                            } else {
+                                 console.log("checkAnswer finally: Not unblocking (demoting).");
+                                 // isProcessing 在跳轉前解除 (如果需要的話，目前不需要)
+                            }
+                        });
+                } // ★★★ End checkAnswer function ★★★
+
+                function sendChatMessage() {
+                     /* ... (獲取 userPrompt, 檢查 isProcessing) ... */
+                     isProcessing = true; // ★ Lock
+                     console.log("sendChatMessage started.");
+                     /* ... (禁用 chat input/button) ... */
+
+                     fetch('/ask_gemini', { method: 'POST', /* ... */ })
+                         /* ... .then .catch ... */
+                         .finally(() => {
+                              console.log("sendChatMessage finished.");
+                              isProcessing = false; // ★ UNLOCK FIRST
+                              /* ... (恢復 chat input/button) ... */
+                              updateButtonStates(); // ★ Update ALL buttons
+                         });
+                }
+
+                // --- Font Size Function ---
+                function setFontSize(size) {
+                    const fontButtons = [fontSmallButton, fontMediumButton, fontLargeButton].filter(Boolean);
+                    const sizeClasses = ['font-small', 'font-medium', 'font-large'];
+                    // Use chatHistory directly, check existence
+                    if (!chatHistory || !chatInputElement || fontButtons.length === 0) return;
+                    try {
+                        sizeClasses.forEach(cls => { chatHistory.classList.remove(cls); chatInputElement.classList.remove(cls); });
+                        chatHistory.classList.add(`font-${size}`); chatInputElement.classList.add(`font-${size}`);
+                        fontButtons.forEach(btn => { if(btn.dataset.size === size) { btn.classList.add('active'); } else { btn.classList.remove('active'); } });
+                        localStorage.setItem('chatFontSize', size);
+                   } catch(e) { console.error("setFontSize error:", e); }
+                }
+
+                // --- ★★★ Initialization Function ★★★ ---
+                function initializeApp() {
+                    console.log("initializeApp starting...");
+                    try {
+                        // Elements are acquired in the outer scope
+
+                        // --- Get Canvas Context ---
+                        if (canvas) {
+                            try {
+                                ctx = canvas.getContext('2d');
+                                if (!ctx) throw new Error("Failed to get 2D context");
+                                console.log("Canvas context acquired.");
+                            } catch (e) {
+                                console.error("CRITICAL: Canvas context initialization failed:", e);
+                                if(resultDisplay) resultDisplay.textContent = "畫布錯誤!"; resultDisplay.style.color = "red";
+                                if (analyzeButton) analyzeButton.disabled = true;
+                                if (clearButton) clearButton.disabled = true;
+                            }
+                        } else {
+                             console.error("CRITICAL: Canvas element missing.");
+                             if(resultDisplay) resultDisplay.textContent = "畫布載入失敗!"; resultDisplay.style.color = "red";
+                             if (analyzeButton) analyzeButton.disabled = true;
+                             if (clearButton) clearButton.disabled = true;
+                        }
+
+                        // --- Bind Core Events ---
+                        console.log("Binding core events...");
+                        if (submitButton) submitButton.addEventListener('click', checkAnswer);
+                        if (answerInput) answerInput.addEventListener('keypress', (event) => { if (event.key === 'Enter') checkAnswer(); });
+                        if (chatSendButton) chatSendButton.addEventListener('click', sendChatMessage);
+                        if (chatInput) chatInput.addEventListener('keypress', (event) => { if (event.key === 'Enter') sendChatMessage(); });
+                        console.log("Core events bound.");
+
+                        // --- Bind Canvas Events & Tools ---
+                        if (ctx && canvas && clearButton && analyzeButton && penButton /* ... */) {
+                            console.log("Binding canvas events...");
+                            // ★ Initial resize
+                            resizeCanvas();
+                            // window.addEventListener('resize', resizeCanvas); // Optional
+
+                            canvas.addEventListener('mousedown', startDrawing);
+                            canvas.addEventListener('mouseup', stopDrawing);
+                            canvas.addEventListener('mousemove', draw);
+                            canvas.addEventListener('mouseleave', stopDrawing);
+                            canvas.addEventListener('touchstart', startDrawing, { passive: false });
+                            canvas.addEventListener('touchend', stopDrawing, { passive: false });
+                            canvas.addEventListener('touchmove', draw, { passive: false });
+                            canvas.addEventListener('touchcancel', stopDrawing, { passive: false });
+                            clearButton.addEventListener('click', clearCanvas);
+
+                        // --- AI Analyze Button (修正 finally 邏輯) ---
+                        analyzeButton.addEventListener('click', () => {
+                             if (!ctx || analyzeButton.disabled || isProcessing) return;
+                             console.log("Analyze button clicked.");
+                             const imageDataURL = canvas.toDataURL('image/png');
+                             const thinkingMessage = addChatMessage('AI 分析中...', 'bot-message thinking-message');
+                             isProcessing = true; updateButtonStates(); // Disable
+    
+                             const requestBody = { image_data_url: imageDataURL };
+                             if (currentInequalityString) { requestBody.inequality_string = currentInequalityString; }
+    
+                             let isDemoting = false; let graphCorrect = false;
+                             fetch('/analyze_handwriting', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(requestBody) }) // ★ 確保 POST 和 header
+                                 .then(response => {
+                                     if (!response.ok) { return response.json().then(err => {throw new Error(err.reply || `HTTP ${response.status}`)}) }
+                                     return response.json();
+                                 })
+                                 .then(data => {
+                                     if(thinkingMessage) thinkingMessage.remove();
+                                     graphCorrect = data.is_graph_correct; // Store result
+                                     if (currentInequalityString) { /* ... (handle drawing feedback) ... */ }
+                                     else { /* ... (handle calculation feedback) ... */ }
+                                     // Schedule next question ONLY if drawing was correct
+                                     if (currentInequalityString && graphCorrect) {
+                                         // ★ Schedule loadNextQuestion, DO NOT unlock here
+                                         setTimeout(loadNextQuestion, 1500);
+                                     } else if (data.demote_to_skill_id) {
+                                         isDemoting = true; /* ... (redirect logic) ... */
+                                         setTimeout(() => { isProcessing = false; window.location.href = `/start_practice/${data.demote_to_skill_id}`; }, 3000);
+                                     }
+                                 })
+                                 .catch(error => { console.error('Analyze error:', error); if(thinkingMessage) thinkingMessage.remove(); addChatMessage(`分析失敗: ${error.message}`, 'bot-message'); })
+                                 .finally(() => {
+                                     console.log("Analyze finally:", {isDemoting, currentInequalityString, graphCorrect});
+                                     // ★★★ 只要不是正在跳轉，就解除鎖定並更新按鈕 ★★★
+                                     //     畫圖答對的情況會在 loadNextQuestion 開始時重新鎖定
+                                     if (!isDemoting) {
+                                         console.log("Analyze finally: Unblocking.");
+                                         isProcessing = false; // ★ UNLOCK
+                                         updateButtonStates(); // ★ Restore
+                                     } else {
+                                          console.log("Analyze finally: Not unblocking (demoting).");
+                                     }
+                                 });
+                        }); // ★ End analyzeButton listener
+
+                            // --- Canvas Tools Events ---
+                            function updateToolActiveState() {
+                                if (!canvas) return;
+                                try {
+                                     const cursor = isErasing ? 'cell' : 'crosshair';
+                                     canvas.style.cursor = cursor;
+                                     if(penButton) penButton.classList.toggle('active', !isErasing);
+                                     if(eraserButton) eraserButton.classList.toggle('active', isErasing);
+                                 } catch (e) { console.error("Update tool state error:", e); }
+                            }
+                            if(penButton) penButton.addEventListener('click', () => { if (!isProcessing) { isErasing = false; setPenStyle(); updateToolActiveState(); } });
+                            if(eraserButton) eraserButton.addEventListener('click', () => { if (!isProcessing) { isErasing = true; setPenStyle(); updateToolActiveState(); } });
+                            if(penColorInput) penColorInput.addEventListener('change', (e) => { currentPenColor = e.target.value; if (!isErasing && !isProcessing) { setPenStyle(); } });
+                            if(penWidthSlider) penWidthSlider.addEventListener('input', (e) => { if (!isProcessing) { currentPenWidth = e.target.value; if(penWidthLabel) penWidthLabel.textContent = currentPenWidth; if (!isErasing) { setPenStyle(); } } });
+                            updateToolActiveState(); // Initial state
+                            console.log("Canvas events bound.");
+                        } else { console.warn("Canvas context/elements missing, canvas features disabled."); }
+
+                        // --- Chat Font Size ---
+                        try {
+                            const fontButtons = [fontSmallButton, fontMediumButton, fontLargeButton].filter(Boolean);
+                            if (fontButtons.length > 0 && chatHistory && chatInputElement) {
+                                console.log("Binding font size events...");
+                                // function setFontSize(size) { ... } defined above
+                                fontButtons.forEach(button => { button.addEventListener('click', (e) => { setFontSize(e.target.dataset.size); }); });
+                                const savedSize = localStorage.getItem('chatFontSize') || 'medium';
+                                setFontSize(savedSize);
+                                console.log("Font size events bound.");
+                            } else { console.warn("Font size elements missing."); }
+                        } catch(e) { console.error("字體調整功能錯誤:", e); }
+
+                        // --- Final Initial Load ---
+                        console.log("Initialization complete. Loading first question...");
+                        loadNextQuestion(); // Call directly
+
+                    } catch (initError) { // Catch errors during initialization steps
+                          console.error("initializeApp failed:", initError);
+                          document.body.innerHTML = `<h1 style="color: red;">頁面初始化失敗: ${initError.message}</h1>`;
+                    }
+                } // --- End of initializeApp function ---
+
+                // --- Trigger Initialization ---
+                initializeApp(); // ★ Call directly inside DOMContentLoaded
+
+            } catch (globalError) { // Catch errors during element acquisition or early issues
+                  console.error("腳本初始化早期發生嚴重錯誤:", globalError);
+                  document.body.innerHTML = `<h1 style="color: red;">頁面載入失敗: ${globalError.message}</h1>`;
+            }
+
+        }); // --- DOMContentLoaded END ---
+    </script>
+
+</body>
+</html>

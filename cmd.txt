@@ -1,0 +1,31 @@
+K:
+CD 我的雲端硬碟\Python\MathProject
+
+========新電腦第一次安裝環境======
+python -m venv venv
+
+pip install Flask
+pip install google-generativeai
+pip install flask_sqlalchemy
+pip install flask_bcrypt
+
+.\venv\Scripts\activate
+在 (venv) 虛擬環境中
+pip install Pillow
+
+====================================
+
+========每次執行程式========
+K:
+CD 我的雲端硬碟\Python\MathProject
+.\venv\Scripts\activate
+set GEMINI_API_KEY=AIzaSyAHdn-IImFJwyVMqRt5TdqBFOdnw_bgbbY
+
+python app.py
+============================
+
+http://localhost:5000/
+
+
+備用key
+set GEMINI_API_KEY=AIzaSyCCvlrh5-3Y_Ck15cZDJ-R0C3yYN9WTBpw

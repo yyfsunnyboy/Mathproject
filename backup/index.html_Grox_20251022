@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>功文數學練習網站</title>
+    <style>
+        /* (CSS 樣式保持不變) */
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; overflow: hidden; }
+        .navbar { background-color: #343a40; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .navbar a { color: white; text-decoration: none; padding: 5px 10px; border-radius: 4px; transition: background-color 0.2s; }
+        .navbar a:hover { background-color: #495057; }
+        .navbar .logo { font-weight: bold; font-size: 1.2em; }
+        .container { display: flex; height: calc(100vh - 47px); /* Adjusted for typical navbar height */ }
+        .practice-area { flex: 2; background-color: #ffffff; box-shadow: 2px 0 10px rgba(0,0,0,0.05); display: flex; flex-direction: column; border-right: 1px solid #dee2e6;}
+        .practice-top { padding: 20px 25px 15px 25px; border-bottom: 1px solid #dee2e6; flex-shrink: 0; }
+        .practice-top h1 { color: #212529; margin-top: 0; margin-bottom: 10px; font-size: 1.3em; font-weight: 600; }
+        .practice-top h2 { font-size: 1.1em; margin-bottom: 10px; color: #495057;}
+        .practice-top #question-text { font-size: 1.3em; font-weight: 500; color: #343a40; margin: 20px 0; line-height: 1.6; white-space: pre-wrap; background-color: #f8f9fa; padding: 15px; border-radius: 4px; border: 1px solid #e9ecef;}
+        .input-group { display: flex; margin-top: 20px;}
+        .practice-top input[type="text"] { font-size: 1.1em; padding: 10px 12px; flex-grow: 1; margin-right: 8px; border: 1px solid #ced4da; border-radius: 4px; transition: border-color 0.2s, box-shadow 0.2s;}
+        .practice-top input[type="text"]:focus { border-color: #80bdff; outline: 0; box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25); }
+        .practice-top input[type="text"]:disabled { background-color: #e9ecef; cursor: not-allowed; opacity: 0.7;}
+        .practice-top button { font-size: 1.1em; padding: 10px 18px; cursor: pointer; flex-shrink: 0; background-color: #007bff; color: white; border: none; border-radius: 4px; transition: background-color 0.2s; }
+        .practice-top button:hover:not(:disabled) { background-color: #0056b3; }
+        .practice-top button:disabled { background-color: #6c757d !important; cursor: not-allowed !important; border-color: #6c757d !important; opacity: 0.65; }
+        .practice-top #result-display { margin-top: 15px; font-weight: bold; font-size: 1.1em; min-height: 1.3em; padding: 10px; border-radius: 4px; }
+        .practice-top #result-display.correct {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .practice-top #result-display.incorrect {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .practice-top #result-display {
+            margin-top: 15px;
+            font-weight: bold;
+            font-size: 1.1em;
+            min-height: 1.3em;
+            transition: background-color 0.3s, color 0.3s; /* Smooth transition */
+        }
+        .practice-top #result-display.info { background-color: #cce5ff; color: #004085; border: 1px solid #b8daff; }
+
+        .practice-bottom { padding: 20px 25px; flex-grow: 1; display: flex; flex-direction: column; min-height: 150px; background-color: #f8f9fa;}
+        .canvas-toolbar { margin-bottom: 10px; flex-shrink: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #dee2e6;}
+        .canvas-container { width: 100%; flex-grow: 1; border: 1px solid #ced4da; background-color: #ffffff; overflow-y: scroll; min-height: 150px; border-radius: 4px;}
+        #handwriting-canvas { display: block; background-color: white; cursor: crosshair; touch-action: none; border-radius: 4px;}
+
+        .chat-area { flex: 1; padding: 20px 25px; background-color: #f8f9fa; display: flex; flex-direction: column; box-sizing: border-box; }
+        .chat-area h3 { text-align: center; color: #007bff; border-bottom: 1px solid #dee2e6; padding-bottom: 10px; margin-top: 0; font-weight: 600; }
+        .chat-toolbar { display: flex; align-items: center; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #eee; gap: 5px; }
+        .chat-toolbar .tool-label { font-size: 0.9em; margin-right: 5px; color: #495057; }
+        .font-button { padding: 3px 8px; font-size: 0.85em; margin-left: 3px; cursor: pointer; border: 1px solid #ced4da; background-color: #e9ecef; border-radius: 4px; transition: background-color 0.2s, border-color 0.2s;}
+        .font-button.active { background-color: #007bff; border-color: #007bff; color: white; }
+        #chat-history { flex-grow: 1; overflow-y: auto; padding: 10px; border: 1px solid #dee2e6; background: #ffffff; margin-bottom: 15px; border-radius: 4px;}
+        .chat-message { margin-bottom: 12px; padding: 10px 12px; border-radius: 8px; line-height: 1.5; max-width: 85%; word-wrap: break-word; }
+        .user-message { background-color: #007bff; color: white; margin-left: auto; text-align: left;}
+        .bot-message { background-color: #e9ecef; color: #343a40; margin-right: auto; text-align: left;}
+        .bot-message pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; font-family: inherit; font-size: inherit; }
+        .thinking-message { color: #6c757d; font-style: italic; background-color: #f8f9fa; border: 1px dashed #ced4da; }
+        .chat-input-area { display: flex; gap: 8px;}
+        #chat-input { flex-grow: 1; padding: 10px 12px; font-size: 1em; border: 1px solid #ced4da; border-radius: 4px; transition: border-color 0.2s, box-shadow 0.2s;}
+        #chat-input:focus { border-color: #80bdff; outline: 0; box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25); }
+        #chat-send-button { padding: 10px 15px; font-size: 1em; cursor: pointer; background-color: #28a745; color: white; border: none; border-radius: 4px; transition: background-color 0.2s;}
+        #chat-send-button:hover:not(:disabled) { background-color: #218838; }
+
+        #chat-history.font-small .chat-message { font-size: 0.85em; } #chat-history.font-medium .chat-message { font-size: 1.0em; } #chat-history.font-large .chat-message { font-size: 1.2em; }
+        .chat-input-area.font-small #chat-input { font-size: 0.85em; } .chat-input-area.font-medium #chat-input { font-size: 1.0em; } .chat-input-area.font-large #chat-input { font-size: 1.2em; }
+        .canvas-toolbar strong { margin-right: 10px; color: #495057; font-weight: 600;}
+        .tool-button { padding: 5px 10px; margin-right: 5px; cursor: pointer; border: 1px solid #ced4da; background-color: #e9ecef; border-radius: 4px; transition: background-color 0.2s, border-color 0.2s;}
+        .tool-button.active { background-color: #007bff; border-color: #007bff; color: white; }
+        .tool-label { margin-left: 10px; font-size: 0.9em; color: #495057;}
+        input[type="color"] { width: 28px; height: 28px; padding: 0; border: 1px solid #ced4da; vertical-align: middle; margin-left: 5px; cursor: pointer; border-radius: 4px;}
+        input[type="range"] { vertical-align: middle; margin-left: 5px; cursor: pointer;}
+        #pen-width-label { font-size: 0.9em; width: 20px; display: inline-block; text-align: center; color: #495057;}
+        .canvas-actions { margin-left: auto; display: flex; gap: 8px;}
+        .canvas-actions button { padding: 8px 12px; font-size: 0.9em; border-radius: 4px; cursor: pointer; border: none; transition: background-color 0.2s;}
+        #clear-canvas-button { background-color: #dc3545; color: white; }
+        #clear-canvas-button:hover:not(:disabled) { background-color: #c82333; }
+        #analyze-handwriting-button { background-color: #007bff; color: white; }
+        #analyze-handwriting-button:hover:not(:disabled) { background-color: #0056b3; }
+        .canvas-actions button:disabled { background-color: #6c757d !important; border-color: #6c757d !important; color: #fff !important; cursor: not-allowed !important; opacity: 0.65;}
+        button:disabled { background-color: #ced4da !important; cursor: not-allowed !important; border-color: #adb5bd !important; opacity: 0.65;}
+        input:disabled { background-color: #e9ecef !important; cursor: not-allowed !important; opacity: 0.7;}
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <div class="navbar">
+        <a href="{{ url_for('dashboard') }}" class="logo">功文數學 ( 歡迎, <strong>{{ username }}</strong>！ )</a>
+        <a href="{{ url_for('logout') }}">登出</a>
+    </div>
+
+    <!-- Main Container -->
+    <div class="container">
+        <!-- Practice Area (Left) -->
+        <div class="practice-area">
+            <!-- Top Section (Question) -->
+            <div class="practice-top">
+                <h1>{{ skill_display_name }}</h1> <hr> <h2>練習題：</h2>
+                <p id="question-text">{{ question_text }}</p>
+                <div class="input-group">
+                    <input type="text" id="answer-input" placeholder="請在此輸入答案">
+                    <button type="button" id="submit-button">提交答案</button>
+                </div>
+                <div id="result-display"></div>
+            </div>
+            <!-- Bottom Section (Canvas) -->
+            <div class="practice-bottom">
+                <!-- Canvas Toolbar -->
+                <div class="canvas-toolbar">
+                    <strong>數位計算紙：</strong>
+                    <button id="pen-button" class="tool-button active">畫筆</button>
+                    <button id="eraser-button" class="tool-button">橡皮擦</button>
+                    <label for="pen-color" class="tool-label">顏色:</label>
+                    <input type="color" id="pen-color" value="#000000">
+                    <label for="pen-width" class="tool-label">粗細:</label>
+                    <input type="range" id="pen-width" min="1" max="20" value="1">
+                    <span id="pen-width-label">1</span>
+                    <div class="canvas-actions">
+                        <button id="clear-canvas-button">清除畫布</button>
+                        <button id="analyze-handwriting-button" style="background-color: #007bff; color: white;">AI 幫我檢查計算</button>
+                    </div>
+                 </div>
+                <!-- Canvas Container -->
+                <div class="canvas-container"> <canvas id="handwriting-canvas"></canvas> </div>
+            </div>
+        </div>
+        <!-- Chat Area (Right) -->
+        <div class="chat-area">
+             <h3>AI 助教</h3>
+             <div class="chat-toolbar">
+                 <span class="tool-label">字體:</span>
+                 <button id="font-small-button" class="font-button" data-size="small">小</button>
+                 <button id="font-medium-button" class="font-button" data-size="medium">中</button>
+                 <button id="font-large-button" class="font-button" data-size="large">大</button>
+             </div>
+             <div id="chat-history"> <div class="bot-message"><pre>你好！...</pre></div> </div>
+             <div class="chat-input-area">
+                 <input type="text" id="chat-input" placeholder="問我觀念問題...">
+                 <button type="button" id="chat-send-button">送出</button>
+             </div>
+        </div>
+    </div> <!-- End Container -->
+
+    <!-- ★ 修正：初始設定 currentInequalityString (從 Jinja 傳遞) -->
+    <script>
+        let currentInequalityString = "{{ inequality_string }}";  // ★ 如果是繪圖題，會有值；否則空字串
+    </script>
+
+    <!-- ★★★ JavaScript - Final Fix Attempt v14 - Complete & Strict Init ★★★ -->
+    <script defer>
+        console.log("Script execution starting (defer)...");
+
+        // ★★★ Wrap EVERYTHING inside DOMContentLoaded ★★★
+        document.addEventListener('DOMContentLoaded', () => {
+        console.log("DOM fully loaded. Starting initialization process...");
+
+        try {
+            // --- 1. Element Acquisition (CRITICAL) ---
+            console.log("Acquiring elements...");
+            const submitButton = document.getElementById('submit-button');
+            const answerInput = document.getElementById('answer-input');
+            const questionText = document.getElementById('question-text');
+            const resultDisplay = document.getElementById('result-display');
+            const analyzeButton = document.getElementById('analyze-handwriting-button');
+            const chatHistory = document.getElementById('chat-history');
+            const chatInput = document.getElementById('chat-input');
+            const chatSendButton = document.getElementById('chat-send-button');
+            const canvas = document.getElementById('handwriting-canvas');
+            const canvasContainer = document.querySelector('.canvas-container');
+            const clearButton = document.getElementById('clear-canvas-button');
+            const penButton = document.getElementById('pen-button');
+            const eraserButton = document.getElementById('eraser-button');
+            const penColorInput = document.getElementById('pen-color');
+            const penWidthSlider = document.getElementById('pen-width');
+            const penWidthLabel = document.getElementById('pen-width-label');
+            const fontSmallButton = document.getElementById('font-small-button');
+            const fontMediumButton = document.getElementById('font-medium-button');
+            const fontLargeButton = document.getElementById('font-large-button');
+            const chatInputElement = document.querySelector('.chat-input-area');
+
+            const essentialElements = { submitButton, answerInput, questionText, resultDisplay, analyzeButton, chatHistory, chatInput, chatSendButton, canvas, canvasContainer, clearButton, penButton, eraserButton, penColorInput, penWidthSlider, penWidthLabel, chatInputElement };
+            for (const key in essentialElements) {
+                if (!essentialElements[key]) {
+                    throw new Error(`Initialization failed: Essential element '${key}' not found.`);
+                }
+            }
+            console.log("All essential elements acquired successfully.");
+
+            // --- 2. Global State Variables ---
+            let ctx = null;
+            let drawing = false;
+            let currentPenColor = '#000000';
+            let currentPenWidth = 1;
+            let isErasing = false;
+            let isProcessing = false;
+
+            // --- 3. Utility Functions ---
+            function addChatMessage(message, classNames) {
+                if (!chatHistory) { console.error("addChatMessage: chatHistory not found!"); return null; }
+                const messageElement = document.createElement('div');
+                messageElement.classList.add('chat-message');
+                if (classNames) { classNames.split(' ').forEach(cls => { if (cls) messageElement.classList.add(cls); }); }
+                const preElement = document.createElement('pre');
+                preElement.textContent = message;
+                messageElement.appendChild(preElement);
+                chatHistory.appendChild(messageElement);
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+                return messageElement;
+            }
+
+            function updateButtonStates() {
+                console.log(`Updating states: isProcessing=${isProcessing}, isDrawing=${!!currentInequalityString}`);
+                const isDrawingQuestion = !!currentInequalityString;
+                if (submitButton) submitButton.disabled = isProcessing || isDrawingQuestion;
+                if (answerInput) answerInput.disabled = isProcessing || isDrawingQuestion;
+                if (analyzeButton) analyzeButton.disabled = isProcessing;
+                if (analyzeButton) analyzeButton.textContent = isProcessing ? '處理中...' : 'AI 幫我檢查計算';
+                if (answerInput) answerInput.placeholder = isDrawingQuestion ? "請在畫布作答" : "請在此輸入答案";
+                const canvasToolsDisabled = isProcessing;
+                if (clearButton) clearButton.disabled = canvasToolsDisabled;
+                if (penButton) penButton.disabled = canvasToolsDisabled;
+                if (eraserButton) eraserButton.disabled = canvasToolsDisabled;
+                if (penColorInput) penColorInput.disabled = canvasToolsDisabled;
+                if (penWidthSlider) penWidthSlider.disabled = canvasToolsDisabled;
+            }
+
+            // --- 4. Canvas Functions ---
+            function setPenStyle() {
+                if (!ctx) return;
+                try {
+                    const dpr = window.devicePixelRatio || 1;
+                    if (isErasing) {
+                        ctx.strokeStyle = '#FFFFFF';
+                        ctx.lineWidth = 20;
+                    } else {
+                        ctx.strokeStyle = currentPenColor;
+                        ctx.lineWidth = currentPenWidth;
+                    }
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                } catch (e) { console.error("Set pen style error:", e); }
+            }
+
+            function clearCanvas() {
+                if (!ctx || !canvas) return;
+                try {
+                    ctx.save();
+                    ctx.resetTransform();
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.restore();
+                    const displayWidth = canvas.clientWidth;
+                    const actualDisplayHeight = parseFloat(canvas.style.height || canvas.clientHeight * 1.5);
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(0, 0, displayWidth, actualDisplayHeight);
+                    setPenStyle();
+                } catch (e) { console.error("Clear canvas error:", e); }
+            }
+
+            function resizeCanvas() {
+                if (!canvasContainer || !canvas || !ctx) { console.warn("resizeCanvas skipped: elements/ctx missing"); return; }
+                try {
+                    const dpr = window.devicePixelRatio || 1;
+                    const rect = canvasContainer.getBoundingClientRect();
+                    const displayWidth = Math.max(1, Math.floor(rect.width));
+                    const displayHeight = Math.max(1, Math.floor(rect.height));
+                    canvas.width = displayWidth * dpr;
+                    canvas.height = (displayHeight * 1.5) * dpr;
+                    canvas.style.width = `${displayWidth}px`;
+                    canvas.style.height = `${displayHeight * 1.5}px`;
+                    ctx.resetTransform();
+                    ctx.scale(dpr, dpr);
+                    clearCanvas();
+                    console.log(`Canvas resized (HiDPI basic): ${canvas.width}x${canvas.height}, DPR: ${dpr}`);
+                } catch (e) { console.error("Resize canvas error:", e); }
+            }
+
+            function getCoordinates(event) {
+                if (!canvas) return { x: 0, y: 0 };
+                if (event.touches && event.touches.length > 0) event = event.touches[0];
+                try {
+                    const rect = canvas.getBoundingClientRect();
+                    const cssX = event.clientX - rect.left;
+                    const cssY = event.clientY - rect.top;
+                    return { x: cssX, y: cssY };
+                } catch (e) { console.error("Get coords error:", e); return { x: 0, y: 0 }; }
+            }
+
+            function startDrawing(event) {
+                if (!ctx || drawing || isProcessing) return;
+                try {
+                    event.preventDefault();
+                    drawing = true;
+                    const { x, y } = getCoordinates(event);
+                    setPenStyle();
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                } catch (e) { console.error("Start drawing error:", e); drawing = false; }
+            }
+
+            function stopDrawing(event) {
+                if (!ctx || !drawing) return;
+                try { event.preventDefault(); drawing = false; ctx.closePath(); }
+                catch (e) { console.error("Stop drawing error:", e); drawing = false; }
+            }
+
+            function draw(event) {
+                if (!ctx || !drawing || isProcessing) return;
+                try {
+                    event.preventDefault();
+                    const { x, y } = getCoordinates(event);
+                    ctx.lineTo(x, y);
+                    ctx.stroke();
+                } catch (e) { console.error("Draw error:", e); drawing = false; }
+            }
+
+            // --- 5. Core Logic Functions ---
+            function loadNextQuestion() {
+                return new Promise((resolve, reject) => {
+                    if (isProcessing) { 
+                        console.warn("loadNextQuestion skipped: processing."); 
+                        reject(new Error("Processing in progress")); 
+                        return; 
+                    }
+                    isProcessing = true;
+                    console.log("loadNextQuestion started.");
+                    if (resultDisplay) resultDisplay.textContent = '載入下一題中...';
+                    updateButtonStates();
+                    if (ctx) clearCanvas();
+            
+                    fetch('/get_next_question')
+                        .then(response => {
+                            if (!response.ok) throw new Error('Network response failed');
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (questionText) {
+                                questionText.textContent = data.new_question_text || "載入失敗";
+                                sessionStorage.setItem('currentQuestionText', data.new_question_text || ""); // 臨時儲存
+                            }
+                            if (resultDisplay) resultDisplay.textContent = '';
+                            currentInequalityString = data.inequality_string || null;
+                            console.log("Next question loaded:", { new_question_text: data.new_question_text, inequality_string: currentInequalityString });
+                        })
+                        .catch(error => {
+                            console.error('Load question error:', error);
+                            if (resultDisplay) resultDisplay.textContent = '載入下一題失敗，請重試。';
+                            currentInequalityString = null;
+                            reject(error);
+                        })
+                        .finally(() => {
+                            console.log("loadNextQuestion finished.");
+                            isProcessing = false;
+                            updateButtonStates();
+                            if (!currentInequalityString && answerInput && !answerInput.disabled) {
+                                answerInput.focus();
+                            }
+                            resolve();
+                        });
+                });
+            }
+
+            function checkAnswer() {
+                if (currentInequalityString || !answerInput || answerInput.disabled || !submitButton || submitButton.disabled || isProcessing) return;
+                const userAnswer = answerInput.value.trim();
+                if (userAnswer === '') {
+                    if (resultDisplay) resultDisplay.textContent = '請輸入答案！';
+                    return;
+                }
+
+                console.log("checkAnswer started.");
+                isProcessing = true;
+                updateButtonStates(); // Disable buttons during processing
+                if (resultDisplay) {
+                    resultDisplay.textContent = '檢查中...';
+                    resultDisplay.className = ''; // Reset any styling classes
+                }
+
+                let correct = false;
+                let isDemoting = false;
+                fetch('/check_answer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ answer: userAnswer })
+                })
+                    .then(response => {
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        return response.json();
+                    })
+                    .then(data => {
+                        correct = data.correct;
+                        if (resultDisplay) {
+                            resultDisplay.textContent = data.result;
+                            resultDisplay.className = correct ? 'correct' : 'incorrect';
+                        }
+                        if (correct) {
+                            if (answerInput) {
+                                answerInput.value = ''; // Clear textbox
+                                answerInput.focus(); // Keep focus on textbox
+                            }
+                            if (data.consecutive_correct >= 5) {
+                                resultDisplay.textContent = `恭喜！您已連續答對 5 題，完成此單元練習！`;
+                                setTimeout(() => {
+                                    const proceed = confirm("您已完成此單元！是否繼續下一個單元？");
+                                    if (proceed && data.next_skill_id) {
+                                        window.location.href = `/practice/${data.next_skill_id}`;
+                                    } else {
+                                        window.location.href = '/dashboard';
+                                    }
+                                }, 2000);
+                            } else {
+                                loadNextQuestion(); // Load next question immediately
+                            }
+                        } else {
+                            if (resultDisplay) resultDisplay.style.color = '#721c24';
+                            if (data.demote_to_skill_id) {
+                                isDemoting = true;
+                                resultDisplay.textContent += `\n即將返回「${data.demote_skill_name}」練習...`;
+                                setTimeout(() => {
+                                    window.location.href = `/practice/${data.demote_to_skill_id}`;
+                                }, 2000);
+                            } else {
+                                if (answerInput) answerInput.select();
+                            }
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Check answer error:', error);
+                        if (resultDisplay) resultDisplay.textContent = '檢查答案時發生錯誤，請重試。';
+                    })
+                    .finally(() => {
+                        console.log("checkAnswer finally:", { correct, isDemoting });
+                        // Unlock the interface after processing, regardless of outcome
+                        isProcessing = false;
+                        updateButtonStates(); // Restore buttons
+                    });
+            }
+
+            function sendChatMessage() {
+                const userPrompt = chatInput ? chatInput.value.trim() : '';
+                if (userPrompt === '' || isProcessing || (chatSendButton && chatSendButton.disabled)) return;
+                addChatMessage(userPrompt, 'user-message');
+                isProcessing = true;
+                console.log("sendChatMessage started.");
+                if (chatInput) chatInput.disabled = true;
+                if (chatSendButton) chatSendButton.disabled = true;
+                const thinkingMessage = addChatMessage('AI 助教思考中...', 'bot-message thinking-message');
+                const requestBody = {
+                    prompt: userPrompt,
+                    current_question: questionText ? questionText.textContent : '未知題目'
+                };
+                console.log("Sending to /ask_gemini:", requestBody);
+                fetch('/ask_gemini', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                })
+                    .then(response => {
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (thinkingMessage) thinkingMessage.remove();
+                        addChatMessage(data.reply, 'bot-message');
+                    })
+                    .catch(error => {
+                        console.error('Chat error:', error);
+                        if (thinkingMessage) thinkingMessage.remove();
+                        addChatMessage('抱歉，AI 助教無法回應，請稍後再試。', 'bot-message');
+                    })
+                    .finally(() => {
+                        console.log("sendChatMessage finished.");
+                        isProcessing = false;
+                        if (chatInput) chatInput.disabled = false;
+                        if (chatSendButton) chatSendButton.disabled = false;
+                        if (chatInput) chatInput.focus();
+                        updateButtonStates();
+                    });
+            }
+
+            function setFontSize(size) {
+                const fontButtons = [fontSmallButton, fontMediumButton, fontLargeButton].filter(Boolean);
+                if (!chatHistory || !chatInputElement || fontButtons.length === 0) return;
+                try {
+                    chatHistory.className = `font-${size}`;
+                    chatInputElement.className = `chat-input-area font-${size}`;
+                    fontButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.size === size));
+                } catch(e) { console.error("setFontSize error:", e); }
+            }
+
+            function initializeApp() {
+                console.log("initializeApp starting...");
+                try {
+                    if (canvas) {
+                        try {
+                            ctx = canvas.getContext('2d');
+                            if (!ctx) throw new Error("Failed to get 2D context");
+                            console.log("Canvas context acquired successfully.");
+                        } catch (e) { console.error("Canvas context error:", e); }
+                    } else { console.warn("Canvas element missing."); }
+
+                    console.log("Binding core events...");
+                    if (submitButton) submitButton.addEventListener('click', checkAnswer);
+                    if (answerInput) answerInput.addEventListener('keypress', (event) => { if (event.key === 'Enter') checkAnswer(); });
+                    if (chatSendButton) chatSendButton.addEventListener('click', sendChatMessage);
+                    if (chatInput) chatInput.addEventListener('keypress', (event) => { if (event.key === 'Enter') sendChatMessage(); });
+                    console.log("Core events bound.");
+
+                    if (ctx && canvas && clearButton && analyzeButton && penButton && eraserButton && penColorInput && penWidthSlider) {
+                        console.log("Binding canvas events...");
+                        resizeCanvas();
+                        canvas.addEventListener('mousedown', startDrawing);
+                        canvas.addEventListener('mouseup', stopDrawing);
+                        canvas.addEventListener('mousemove', draw);
+                        canvas.addEventListener('mouseleave', stopDrawing);
+                        canvas.addEventListener('touchstart', startDrawing, { passive: false });
+                        canvas.addEventListener('touchend', stopDrawing, { passive: false });
+                        canvas.addEventListener('touchmove', draw, { passive: false });
+                        canvas.addEventListener('touchcancel', stopDrawing, { passive: false });
+                        clearButton.addEventListener('click', clearCanvas);
+
+                        analyzeButton.addEventListener('click', () => {
+                            if (!ctx || analyzeButton.disabled || isProcessing) return;
+                            console.log("Analyze button clicked.");
+                            const imageDataURL = canvas.toDataURL('image/png');
+                            const thinkingMessage = addChatMessage('AI 分析中...', 'bot-message thinking-message');
+                            isProcessing = true;
+                            updateButtonStates(); // Disable during processing
+                        
+                            const requestBody = { image_data_url: imageDataURL };
+                            if (currentInequalityString) { requestBody.inequality_string = currentInequalityString; }
+                        
+                            let isDemoting = false;
+                            let graphCorrect = !!currentInequalityString; // Default to false for non-graph
+                        
+                            fetch('/analyze_handwriting', { 
+                                method: 'POST', 
+                                headers: {'Content-Type': 'application/json'}, 
+                                body: JSON.stringify(requestBody) 
+                            })
+                            .then(response => {
+                                if (!response.ok) {
+                                    return response.json().then(errData => {
+                                        throw new Error(errData.reply || `HTTP ${response.status}`);
+                                    }).catch(() => {
+                                        throw new Error(`HTTP error! status: ${response.status}`);
+                                    });
+                                }
+                                return response.json();
+                            })
+                            .then(data => {
+                                if (thinkingMessage) thinkingMessage.remove();
+                                graphCorrect = data.is_graph_correct;
+                                
+                                // 更新 resultDisplay 或聊天視窗
+                                if (resultDisplay) {
+                                    resultDisplay.textContent = data.reply;
+                                    resultDisplay.className = graphCorrect ? 'correct' : 'incorrect';
+                                } else {
+                                    addChatMessage(data.reply, graphCorrect ? 'bot-message' : 'bot-message incorrect');
+                                }
+                                
+                                // 畫圖題特定邏輯
+                                if (currentInequalityString) {
+                                    if (graphCorrect) {
+                                        addChatMessage('正確！準備下一題...', 'bot-message');
+                                        // 確保 loadNextQuestion 完成後更新
+                                        setTimeout(() => {
+                                            loadNextQuestion().then(() => {
+                                                console.log("Next question loaded, updating UI...");
+                                                isProcessing = false;
+                                                updateButtonStates();
+                                                if (questionText) {
+                                                    questionText.textContent = sessionStorage.getItem('currentQuestionText') || "載入失敗";
+                                                }
+                                            }).catch(error => {
+                                                console.error("Failed to load next question:", error);
+                                                if (resultDisplay) resultDisplay.textContent = "載入下一題失敗，請重試。";
+                                                isProcessing = false;
+                                                updateButtonStates();
+                                            });
+                                        }, 1500);
+                                    } else if (data.demote_to_skill_id) {
+                                        isDemoting = true;
+                                        addChatMessage(`錯誤次數過多，即將返回 ${data.demote_to_skill_id}。`, 'bot-message');
+                                        setTimeout(() => { window.location.href = `/practice/${data.demote_to_skill_id}`; }, 2000);
+                                    }
+                                } else {
+                                    // 計算題邏輯
+                                    addChatMessage(data.reply, 'bot-message');
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Analyze error:', error);
+                                if (thinkingMessage) thinkingMessage.remove();
+                                const errorMsg = error.message.includes('429') ? 'AI 配額超限，請等待 1 分鐘後再試。' : `分析錯誤：${error.message}`;
+                                if (resultDisplay) {
+                                    resultDisplay.textContent = errorMsg;
+                                    resultDisplay.className = 'incorrect';
+                                } else {
+                                    addChatMessage(errorMsg, 'bot-message incorrect');
+                                }
+                                isProcessing = false;
+                                updateButtonStates();
+                            })
+                            .finally(() => {
+                                console.log("Analyze finally:", {isDemoting, currentInequalityString, graphCorrect});
+                                if (!isDemoting && !(currentInequalityString && graphCorrect)) {
+                                    isProcessing = false;
+                                    updateButtonStates();
+                                }
+                            });
+                        });
+
+
+                        function updateToolActiveState() {
+                            if (!canvas) return;
+                            try {
+                                const cursor = isErasing ? 'cell' : 'crosshair';
+                                canvas.style.cursor = cursor;
+                                if (penButton) penButton.classList.toggle('active', !isErasing);
+                                if (eraserButton) eraserButton.classList.toggle('active', isErasing);
+                            } catch (e) { console.error("Update tool state error:", e); }
+                        }
+                        if (penButton) penButton.addEventListener('click', () => { if (!isProcessing) { isErasing = false; setPenStyle(); updateToolActiveState(); } });
+                        if (eraserButton) eraserButton.addEventListener('click', () => { if (!isProcessing) { isErasing = true; setPenStyle(); updateToolActiveState(); } });
+                        if (penColorInput) penColorInput.addEventListener('change', (e) => { currentPenColor = e.target.value; if (!isErasing && !isProcessing) { setPenStyle(); } });
+                        if (penWidthSlider) penWidthSlider.addEventListener('input', (e) => { if (!isProcessing) { currentPenWidth = e.target.value; if (penWidthLabel) penWidthLabel.textContent = currentPenWidth; if (!isErasing) { setPenStyle(); } } });
+                        updateToolActiveState();
+                        console.log("Canvas events bound.");
+                    } else { console.warn("Canvas context/elements missing, canvas features disabled."); }
+
+                    try {
+                        const fontButtons = [fontSmallButton, fontMediumButton, fontLargeButton].filter(Boolean);
+                        if (fontButtons.length > 0 && chatHistory && chatInputElement) {
+                            console.log("Binding font size events...");
+                            fontButtons.forEach(button => { button.addEventListener('click', (e) => { setFontSize(e.target.dataset.size); }); });
+                            const savedSize = localStorage.getItem('chatFontSize') || 'medium';
+                            setFontSize(savedSize);
+                            console.log("Font size events bound.");
+                        } else { console.warn("Font size elements missing."); }
+                    } catch(e) { console.error("字體調整功能錯誤:", e); }
+
+                    console.log("Initialization complete. Using initial question.");
+                    updateButtonStates();
+                } catch (initError) {
+                    console.error("initializeApp failed:", initError);
+                    document.body.innerHTML = `<h1 style="color: red;">頁面初始化失敗: ${initError.message}</h1>`;
+                }
+            }
+
+            initializeApp();
+
+        } catch (globalError) {
+            console.error("腳本初始化早期發生嚴重錯誤:", globalError);
+            document.body.innerHTML = `<h1 style="color: red;">頁面載入失敗: ${globalError.message}</h1>`;
+        }
+
+    });
+</script>
+
+</body>
+</html>

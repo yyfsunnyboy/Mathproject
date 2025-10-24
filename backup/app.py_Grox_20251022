@@ -1,0 +1,798 @@
+# ==============================================================================
+# 1. Imports
+# ==============================================================================
+import random
+import os
+import base64
+import io
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
+from flask_sqlalchemy import SQLAlchemy
+from flask_bcrypt import Bcrypt
+import google.generativeai as genai
+from PIL import Image
+import time
+from google.api_core.exceptions import ResourceExhausted
+
+# ==============================================================================
+# 2. App Initialization and Configuration
+# ==============================================================================
+app = Flask(__name__)
+app.secret_key = 'YOUR_VERY_SECRET_KEY' # ★ 請務必更換成您自己的密鑰 ★
+
+# --- Database Configuration ---
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///kumon_math.db'
+db = SQLAlchemy(app)
+bcrypt = Bcrypt(app)
+
+# --- Gemini API Configuration ---
+try:
+    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+    model = genai.GenerativeModel('models/gemini-pro-latest')
+except Exception as e:
+    print(f"Gemini API 尚未設定或金鑰錯誤: {e}")
+    model = None
+
+# ==============================================================================
+# 3. Database Models
+# ==============================================================================
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    progress = db.relationship('UserProgress', backref='user', lazy=True)
+
+class Skill(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    skill_id = db.Column(db.String(100), unique=True, nullable=False)
+    display_name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.String(200))
+    progress = db.relationship('UserProgress', backref='skill', lazy=True)
+    prerequisite_skill_id = db.Column(db.String(100), nullable=True)
+
+class UserProgress(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    skill_id = db.Column(db.Integer, db.ForeignKey('skill.id'), nullable=False)
+    consecutive_correct = db.Column(db.Integer, default=0)
+    total_correct = db.Column(db.Integer, default=0)
+    total_attempted = db.Column(db.Integer, default=0)
+    consecutive_incorrect = db.Column(db.Integer, default=0)
+    __table_args__ = (db.UniqueConstraint('user_id', 'skill_id', name='_user_skill_uc'),)
+
+# ==============================================================================
+# 4. Helper Functions (Formatting, Checking)
+# ==============================================================================
+
+# --- Validation Functions (Referenced by name) ---
+def validate_remainder(user_answer, correct_answer):
+    # 簡單的字串比較
+    return str(user_answer).strip().lower() == str(correct_answer).strip().lower()
+
+def validate_factor(user_answer, correct_answer):
+    # 判斷 '是' 或 '否'
+    return str(user_answer).strip() == str(correct_answer)
+
+def validate_linear_equation(user_answer, correct_answer):
+    # 判斷 x=... 或 y=...
+    return str(user_answer).strip().lower() == str(correct_answer).strip().lower()
+
+def validate_check_point(user_answer, correct_answer):
+    # 判斷 '是' 或 '否'
+    return str(user_answer).strip() == str(correct_answer)
+
+# --- Formatting Functions ---
+def format_polynomial(coeffs):
+    """將係數列表轉換成漂亮的多項式字串"""
+    terms = []
+    degree = len(coeffs) - 1
+    for i, coeff in enumerate(coeffs):
+        power = degree - i
+        if coeff == 0: continue
+        term = ""
+        if coeff > 0:
+            if i > 0: term += " + "
+        else:
+            term += " - "
+        abs_coeff = abs(coeff)
+        if abs_coeff != 1 or power == 0:
+            term += str(abs_coeff)
+        if power == 1:
+            term += "x"
+        elif power > 1:
+            term += f"x^{power}"
+        terms.append(term)
+    if not terms: return "0"
+    return "".join(terms)
+
+def format_linear_equation_lhs(a, b):
+    """將係數 (a, b) 轉換成 "ax + by" 的漂亮字串"""
+    terms = []
+    if a == 1: terms.append("x")
+    elif a == -1: terms.append("-x")
+    elif a != 0: terms.append(f"{a}x")
+    if b > 0:
+        if a != 0: terms.append(" + ")
+        if b == 1: terms.append("y")
+        else: terms.append(f"{b}y")
+    elif b < 0:
+        if a != 0: terms.append(" - ")
+        else: terms.append("-")
+        if b == -1: terms.append("y")
+        else: terms.append(f"{abs(b)}y")
+    if not terms: return "0"
+    return "".join(terms)
+
+def check_inequality(a, b, c, sign, x, y):
+    """檢查點 (x, y) 是否滿足 ax + by [sign] c"""
+    lhs = (a * x) + (b * y)
+    if sign == '>': return lhs > c
+    if sign == '>=': return lhs >= c
+    if sign == '<': return lhs < c
+    if sign == '<=': return lhs <= c
+    return False
+
+def format_inequality(a, b, c, sign):
+    """將係數 (a, b, c) 和符號轉換成 "ax + by [sign] c" 的字串"""
+    lhs_str = format_linear_equation_lhs(a, b)
+    return f"{lhs_str} {sign} {c}"
+
+# ==============================================================================
+# 5. Question Generators
+# ==============================================================================
+def generate_remainder_theorem_question():
+    """動態生成一道「餘式定理」的題目 (二次式或三次式)"""
+    degree = random.choice([2, 3])
+    k = random.randint(-3, 3) 
+    coeffs = []
+    correct_answer = 0
+    if degree == 2:
+        a = random.randint(-3, 3); 
+        while a == 0: a = random.randint(-3, 3)
+        b = random.randint(-5, 5); c = random.randint(-9, 9)
+        coeffs = [a, b, c]
+        correct_answer = (a * (k**2)) + (b * k) + c
+    elif degree == 3:
+        a = random.randint(-2, 2); 
+        while a == 0: a = random.randint(-2, 2)
+        b = random.randint(-3, 3); c = random.randint(-5, 5); d = random.randint(-9, 9)
+        coeffs = [a, b, c, d]
+        correct_answer = (a * (k**3)) + (b * (k**2)) + (c * k) + d
+    poly_text = format_polynomial(coeffs)
+    k_sign = "-" if k >= 0 else "+"; k_abs = abs(k)
+    divisor_text = "(x)" if k == 0 else f"(x {k_sign} {k_abs})"
+    question_text = f"求 f(x) = {poly_text} 除以 {divisor_text} 的餘式。"
+    return {
+        "text": question_text, 
+        "answer": str(correct_answer),
+        "validation_function_name": validate_remainder.__name__ # ★ 修正：回傳名稱
+    }
+
+def generate_factor_theorem_question():
+    """動態生成一道「因式定理」的題目 (是/否)"""
+    degree = random.choice([2, 3])
+    k = random.randint(-3, 3) 
+    coeffs = []
+    is_factor = random.choice([True, False])
+    if degree == 2:
+        a = random.randint(-3, 3)
+        while a == 0:
+            a = random.randint(-3, 3)
+        b = random.randint(-5, 5)
+        if is_factor: c = -((a * (k**2)) + (b * k))
+        else:
+            c = random.randint(-9, 9); remainder = (a * (k**2)) + (b * k) + c
+            while remainder == 0: c = random.randint(-9, 9); remainder = (a * (k**2)) + (b * k) + c
+        coeffs = [a, b, c]
+    elif degree == 3:
+        a = random.randint(-2, 2); 
+        while a == 0: 
+            a = random.randint(-2, 2)
+        b = random.randint(-3, 3); c = random.randint(-5, 5)
+        if is_factor: d = -((a * (k**3)) + (b * (k**2)) + (c * k))
+        else:
+            d = random.randint(-9, 9); remainder = (a * (k**3)) + (b * (k**2)) + (c * k) + d
+            while remainder == 0: d = random.randint(-9, 9); remainder = (a * (k**3)) + (b * (k**2)) + (c * k) + d
+        coeffs = [a, b, c, d]
+    poly_text = format_polynomial(coeffs)
+    k_sign = "-" if k >= 0 else "+"; k_abs = abs(k)
+    divisor_text = "(x)" if k == 0 else f"(x {k_sign} {k_abs})"
+    question_text = f"請問 {divisor_text} 是否為 f(x) = {poly_text} 的因式？ (請回答 '是' 或 '否')"
+    correct_answer = "是" if is_factor else "否"
+    return {
+        "text": question_text, 
+        "answer": correct_answer,
+        "validation_function_name": validate_factor.__name__ # ★ 修正：回傳名稱
+    }
+
+def generate_substitution_question():
+    """動態生成一道「帶入消去法」的題目 (確保唯一解)。"""
+    x_sol = random.randint(-5, 5); y_sol = random.randint(-5, 5)
+    while x_sol == 0 or y_sol == 0: x_sol = random.randint(-5, 5); y_sol = random.randint(-5, 5)
+    if random.choice([True, False]): # 產生 y = mx + k
+        m = random.randint(-3, 3); 
+        while m == 0: 
+            m = random.randint(-3, 3)
+        k = y_sol - (m * x_sol)
+        eq1_lhs = "y"; eq1_rhs = f"{m}x"; 
+        if k > 0: eq1_rhs += f" + {k}"
+        elif k < 0: eq1_rhs += f" - {abs(k)}"
+        a = random.randint(-3, 3); b = random.randint(-3, 3)
+        while a == 0 or b == 0 or a == -m * b: a = random.randint(-3, 3); b = random.randint(-3, 3)
+        c = (a * x_sol) + (b * y_sol)
+        eq2_lhs = format_linear_equation_lhs(a, b); eq2_rhs = str(c)
+    else: # 產生 x = my + k
+        m = random.randint(-3, 3); 
+        while m == 0: 
+            m = random.randint(-3, 3)
+        k = x_sol - (m * y_sol)
+        eq1_lhs = "x"; eq1_rhs = f"{m}y";
+        if k > 0: eq1_rhs += f" + {k}"
+        elif k < 0: eq1_rhs += f" - {abs(k)}"
+        a = random.randint(-3, 3); b = random.randint(-3, 3)
+        while a == 0 or b == 0 or b == -m * a: a = random.randint(-3, 3); b = random.randint(-3, 3)
+        c = (a * x_sol) + (b * y_sol)
+        eq2_lhs = format_linear_equation_lhs(a, b); eq2_rhs = str(c)
+    ask_for = random.choice(["x", "y"])
+    answer = str(x_sol) if ask_for == "x" else str(y_sol)
+    question_text = (f"請用帶入消去法解下列聯立方程式：\n{{  {eq1_lhs:<15} = {eq1_rhs:<10} ...... (1)\n{{  {eq2_lhs:<15} = {eq2_rhs:<10} ...... (2)\n\n請問 {ask_for} = ?")
+    return {
+        "text": question_text, 
+        "answer": answer,
+        "validation_function_name": validate_linear_equation.__name__ # ★ 修正：回傳名稱
+    }
+
+def generate_addition_subtraction_question():
+    """動態生成一道「加減消去法」的題目 (加入倍數變化)。"""
+    x_sol = random.randint(-5, 5); y_sol = random.randint(-5, 5)
+    while x_sol == 0 or y_sol == 0: x_sol = random.randint(-5, 5); y_sol = random.randint(-5, 5)
+    a1 = random.randint(-5, 5); b1 = random.randint(-5, 5)
+    while a1 == 0 or b1 == 0: a1 = random.randint(-5, 5); b1 = random.randint(-5, 5)
+    multiplier = random.choice([-3, -2, 2, 3]); b2 = b1 * multiplier
+    a2 = random.randint(-5, 5)
+    while a2 == 0 or a2 == a1 * multiplier: a2 = random.randint(-5, 5)
+    c1 = (a1 * x_sol) + (b1 * y_sol); c2 = (a2 * x_sol) + (b2 * y_sol)
+    eq1_lhs = format_linear_equation_lhs(a1, b1); eq2_lhs = format_linear_equation_lhs(a2, b2)
+    ask_for = random.choice(["x", "y"]); answer = str(x_sol) if ask_for == "x" else str(y_sol)
+    question_text = (f"請用加減消去法解下列聯立方程式：\n{{  {eq1_lhs:<15} = {c1:<10} ...... (1)\n{{  {eq2_lhs:<15} = {c2:<10} ...... (2)\n\n請問 {ask_for} = ?")
+    return {
+        "text": question_text, 
+        "answer": answer,
+        "validation_function_name": validate_linear_equation.__name__ # ★ 修正：回傳名稱
+    }
+
+def generate_check_point_in_system_question():
+    """動態生成一道「判斷點是否為不等式系統解」的題目。"""
+    num_inequalities = random.choice([2, 3])
+    inequalities = []; inequality_strs = []
+    for _ in range(num_inequalities):
+        a = random.randint(-5, 5); b = random.randint(-5, 5)
+        while a == 0 and b == 0: a = random.randint(-5, 5); b = random.randint(-5, 5)
+        temp_x = random.randint(-3, 3); temp_y = random.randint(-3, 3)
+        c = (a * temp_x) + (b * temp_y)
+        sign = random.choice(['>', '>=', '<', '<='])
+        inequalities.append({'a': a, 'b': b, 'c': c, 'sign': sign})
+        inequality_strs.append(format_inequality(a, b, c, sign)) # ★ 修正：使用 c
+    test_x = random.randint(-5, 5); test_y = random.randint(-5, 5)
+    is_solution = True
+    for ieq in inequalities:
+        if not check_inequality(ieq['a'], ieq['b'], ieq['c'], ieq['sign'], test_x, test_y):
+            is_solution = False; break
+    correct_answer = "是" if is_solution else "否"
+    system_str = "\n".join([f"  {s}" for s in inequality_strs])
+    question_text = (f"請問點 ({test_x}, {test_y}) 是否為下列不等式系統的解？ (請回答 '是' 或 '否')\n{{\n{system_str}\n}}")
+    return {
+        "text": question_text, 
+        "answer": correct_answer,
+        "validation_function_name": validate_check_point.__name__ # ★ 修正：回傳名稱
+    }
+
+def generate_inequality_region_question():
+    """動態生成一道「圖示不等式解區域」的題目。"""
+    a = random.randint(-5, 5); b = random.randint(-5, 5)
+    while a == 0 and b == 0: a = random.randint(-5, 5); b = random.randint(-5, 5)
+    c = random.randint(-9, 9); 
+    while c == 0: 
+        c = random.randint(-9, 9)
+    sign = random.choice(['>', '<', '>=', '<='])
+    inequality_lhs = format_linear_equation_lhs(a, b)
+    c_str = "";
+    if c > 0: c_str = f" + {c}"
+    elif c < 0: c_str = f" - {abs(c)}"
+    inequality_expression = f"{inequality_lhs}{c_str}"
+    full_inequality_string = f"{inequality_expression} {sign} 0"
+    question_text = (
+        f"請在下方的「數位計算紙」上，圖示二元一次不等式：\n\n"
+        f"    {full_inequality_string}\n\n"
+        f"畫完後，請點擊「AI 幫我檢查計算」按鈕。"
+    )
+    return {
+        "text": question_text,
+        "answer": None,
+        "validation_function_name": None, # ★ 修正：回傳名稱 (None)
+        "inequality_string": full_inequality_string
+    }
+
+# ==============================================================================
+# 6. Skill Engine Definition
+# ==============================================================================
+SKILL_ENGINE = {
+    'remainder-theorem': {
+        'generator': generate_remainder_theorem_question,
+        'display_name': '餘式定理',
+        'description': '練習 f(x) 除以 (x-k) 的餘式。',
+        'prerequisite_skill_id': None
+    },
+    'factor-theorem': {
+        'generator': generate_factor_theorem_question,
+        'display_name': '因式定理',
+        'description': '判斷 (x-k) 是否為 f(x) 的因式。',
+        'prerequisite_skill_id': 'remainder-theorem'
+    },
+    'linear-eq-substitution': {
+        'generator': generate_substitution_question,
+        'display_name': '二元一次 (帶入消去法)',
+        'description': '練習 y=ax+b 形式的帶入消去。',
+        'prerequisite_skill_id': None
+    },
+    'linear-eq-addition': {
+        'generator': generate_addition_subtraction_question,
+        'display_name': '二元一次 (加減消去法)',
+        'description': '練習係數需乘以倍數的加減消去。',
+        'prerequisite_skill_id': 'linear-eq-substitution'
+    },
+     'linear-ineq-region': { # ★ 這是畫圖題
+        'generator': generate_inequality_region_question,
+        'display_name': '二元一次不等式 (圖解區域)',
+        'description': '在數位計算紙上畫出不等式的解區域。',
+        'prerequisite_skill_id': 'linear-eq-addition'
+    },
+    'linear-ineq-check-point': { # ★ 這是文字題
+        'generator': generate_check_point_in_system_question,
+        'display_name': '二元一次不等式 (判斷解)',
+        'description': '判斷一個點是否為不等式系統的解。',
+        'prerequisite_skill_id': 'linear-ineq-region'
+    }
+}
+
+DEMOTION_THRESHOLD = 3 # 連續答錯 3 題就降級
+
+def initialize_skills():
+    """同步 SKILL_ENGINE 到資料庫 (包含先備知識)"""
+    with app.app_context():
+        print("正在同步技能到資料庫...")
+        skill_ids_in_code = set(SKILL_ENGINE.keys())
+        skills_in_db = Skill.query.all()
+        skill_ids_in_db = set(s.skill_id for s in skills_in_db)
+
+        skills_to_add = skill_ids_in_code - skill_ids_in_db
+        for skill_id in skills_to_add:
+            skill_data = SKILL_ENGINE[skill_id]
+            new_skill = Skill(
+                skill_id=skill_id,
+                display_name=skill_data['display_name'],
+                description=skill_data['description'],
+                prerequisite_skill_id=skill_data.get('prerequisite_skill_id')
+            )
+            db.session.add(new_skill)
+            print(f"  > 已新增技能: {skill_id}")
+
+        skills_to_remove = skill_ids_in_db - skill_ids_in_code
+        for skill_id in skills_to_remove:
+            skill_to_delete = Skill.query.filter_by(skill_id=skill_id).first()
+            if skill_to_delete:
+                UserProgress.query.filter_by(skill_id=skill_to_delete.id).delete()
+                db.session.delete(skill_to_delete)
+                print(f"  > 已移除技能: {skill_id} 及其進度")
+
+        skills_to_update = skill_ids_in_code.intersection(skill_ids_in_db)
+        for skill_id in skills_to_update:
+            skill_in_db = Skill.query.filter_by(skill_id=skill_id).first()
+            skill_data_in_code = SKILL_ENGINE[skill_id]
+            if skill_in_db:
+                needs_update = False
+                if skill_in_db.display_name != skill_data_in_code['display_name']:
+                    skill_in_db.display_name = skill_data_in_code['display_name']
+                    needs_update = True
+                if skill_in_db.description != skill_data_in_code['description']:
+                    skill_in_db.description = skill_data_in_code['description']
+                    needs_update = True
+                if skill_in_db.prerequisite_skill_id != skill_data_in_code.get('prerequisite_skill_id'):
+                    skill_in_db.prerequisite_skill_id = skill_data_in_code.get('prerequisite_skill_id')
+                    needs_update = True
+                if needs_update:
+                    print(f"  > 已更新技能: {skill_id}")
+        db.session.commit()
+
+# ==============================================================================
+# 7. Routes (View Functions)
+# ==============================================================================
+
+# --- Authentication Routes ---
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "POST":
+        username = request.form.get('username')
+        password = request.form.get('password')
+        if not username or not password:
+             flash("帳號或密碼不可為空", "warning"); return redirect(url_for('register'))
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            flash("這個帳號名稱已經有人用了！", "warning"); return redirect(url_for('register'))
+        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+        new_user = User(username=username, password_hash=hashed_password)
+        db.session.add(new_user); db.session.commit()
+        flash("註冊成功！請登入。", "success"); return redirect(url_for('login'))
+    return render_template("register.html")
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get('username')
+        password = request.form.get('password')
+        if not username or not password:
+            flash("帳號或密碼不可為空", "danger"); return redirect(url_for('login'))
+        user = User.query.filter_by(username=username).first()
+        if user and bcrypt.check_password_hash(user.password_hash, password):
+            session['user_id'] = user.id
+            session['username'] = user.username
+            flash(f"歡迎回來，{user.username}！", "success"); return redirect(url_for('home'))
+        else:
+            flash("帳號或密碼錯誤。", "danger"); return redirect(url_for('login'))
+    return render_template("login.html")
+
+@app.route("/logout")
+def logout():
+    session.clear(); flash("您已成功登出。", "info")
+    return redirect(url_for('login'))
+
+# --- Core Application Routes ---
+@app.route("/")
+def home():
+    if 'user_id' not in session:
+        flash("請先登入！", "warning"); return redirect(url_for('login'))
+    return redirect(url_for('dashboard'))
+
+@app.route("/dashboard")
+def dashboard():
+    if 'user_id' not in session:
+        flash("請先登入！", "warning"); return redirect(url_for('login'))
+    user_id = session['user_id']
+    all_skills = Skill.query.all()
+    user_progresses = UserProgress.query.filter_by(user_id=user_id).all()
+    progress_map = {p.skill_id: p for p in user_progresses}
+    dashboard_data = []
+    for skill in all_skills:
+        progress = progress_map.get(skill.id)
+        dashboard_data.append({
+            'skill': skill,
+            'consecutive_correct': progress.consecutive_correct if progress else 0,
+            'total_attempted': progress.total_attempted if progress else 0
+        })
+    return render_template('dashboard.html',
+                           dashboard_data=dashboard_data,
+                           username=session.get('username'))
+
+@app.route("/practice/<string:skill_id>")
+def practice(skill_id):
+    if 'user_id' not in session:
+        flash("請先登入！", "warning"); return redirect(url_for('login'))
+    skill = Skill.query.filter_by(skill_id=skill_id).first()
+    if not skill or skill_id not in SKILL_ENGINE:
+        flash("找不到指定的練習單元。", "danger"); return redirect(url_for('dashboard'))
+        
+    question_data = SKILL_ENGINE[skill_id]['generator']()
+    session['current_skill_id'] = skill_id
+    session['current_question_text'] = question_data.get('text')
+    session['current_answer'] = question_data.get('answer')
+    session['current_inequality_string'] = question_data.get('inequality_string')
+    # ★★★ 修正：儲存 validation_function_name ★★★
+    session['validation_function_name'] = question_data.get('validation_function_name')
+    
+    print(f"({skill_id}) 新題目: {question_data.get('text')} (答案: {question_data.get('answer')})")
+    
+    return render_template('index.html', 
+                           question_text=question_data.get('text'),
+                           inequality_string=question_data.get('inequality_string') or '',  # ★ 修正：傳遞到模板
+                           username=session.get('username'),
+                           skill_display_name=skill.display_name)
+
+# --- API Endpoints ---
+@app.route('/get_next_question')
+def get_next_question():
+    if 'user_id' not in session or 'current_skill_id' not in session:
+        return jsonify({"error": "Session invalid"}), 401
+    skill_id_str = session['current_skill_id']
+    question_generator = SKILL_ENGINE.get(skill_id_str, {}).get('question_generator')
+    if not question_generator:
+        return jsonify({"error": "No question generator for this skill"}), 500
+
+    new_question, new_answer, validation_func = question_generator()  # 確保生成新題目
+    session['current_question_text'] = new_question
+    session['current_answer'] = new_answer
+    session['validation_function_name'] = validation_func.__name__ if validation_func else None
+    session['current_inequality_string'] = getattr(question_generator, 'inequality_string', None) or None
+
+    return jsonify({
+        "new_question_text": new_question,
+        "inequality_string": session['current_inequality_string']
+    })
+
+@app.route("/check_answer", methods=["POST"])
+def check_answer():
+    if 'user_id' not in session:
+        return jsonify({"error": "Not logged in"}), 401
+    data = request.get_json()
+    if not data or 'answer' not in data:
+        return jsonify({"error": "Missing JSON data or 'answer'"}), 400
+
+    user_answer = data.get('answer')
+    skill_id_str = session.get('current_skill_id')
+    correct_answer = session.get('current_answer')
+    validation_func_name = session.get('validation_function_name')
+    if not skill_id_str:
+        return jsonify({"error": "Session missing skill_id"}), 400
+    
+    
+    is_correct = False
+    result_message = ""
+    validation_func = globals().get(validation_func_name) if validation_func_name else None
+
+    if validation_func:
+        try:
+            is_correct = validation_func(user_answer, correct_answer)
+            result_message = "答對了！" if is_correct else f"答錯了... (提示: {correct_answer})"
+        except Exception as e:
+            print(f"Validation function error: {e}")
+            is_correct = False
+            result_message = "答案格式錯誤"
+    else:
+        is_correct = (str(user_answer).strip().lower() == str(correct_answer).strip().lower())
+        result_message = "答對了！" if is_correct else f"答錯了... (提示: {correct_answer})"
+
+    demote_to_skill_id = None
+    next_skill_id = None
+    demote_skill_name = None
+    consecutive_correct = 0
+
+    try:
+        user_id = session['user_id']
+        skill = Skill.query.filter_by(skill_id=skill_id_str).first()
+        if skill:
+            progress = UserProgress.query.filter_by(user_id=user_id, skill_id=skill.id).first()
+            if not progress:
+                progress = UserProgress(user_id=user_id, skill_id=skill.id)
+                db.session.add(progress)
+
+            progress.total_attempted += 1
+            if is_correct:
+                progress.consecutive_correct += 1
+                progress.total_correct += 1
+                progress.consecutive_incorrect = 0
+                consecutive_correct = progress.consecutive_correct
+                if progress.consecutive_correct >= 5:
+                    progress.consecutive_correct = 0  # Reset streak
+                    next_skill = Skill.query.filter_by(prerequisite_skill_id=skill_id_str).first()
+                    if next_skill:
+                        next_skill_id = next_skill.skill_id
+                    result_message = "恭喜！您已連續答對 5 題，完成此單元！"
+            else:
+                progress.consecutive_correct = 0
+                progress.consecutive_incorrect += 1
+                consecutive_correct = 0
+                if progress.consecutive_incorrect >= DEMOTION_THRESHOLD and skill.prerequisite_skill_id:
+                    demote_to_skill_id = skill.prerequisite_skill_id
+                    prereq_skill = Skill.query.filter_by(skill_id=demote_to_skill_id).first()
+                    demote_skill_name = prereq_skill.display_name if prereq_skill else "基礎單元"
+                    result_message = f"您在「{skill.display_name}」單元連續答錯 {progress.consecutive_incorrect} 題了。\n系統建議您先回去複習「{demote_skill_name}」！"
+                    progress.consecutive_incorrect = 0
+            db.session.commit()
+        else:
+            print(f"Warning: Skill '{skill_id_str}' not found.")
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error updating progress: {e}")
+
+    return jsonify({
+        "result": result_message,
+        "correct": is_correct,
+        "demote_to_skill_id": demote_to_skill_id,
+        "demote_skill_name": demote_skill_name,
+        "consecutive_correct": consecutive_correct,
+        "next_skill_id": next_skill_id
+    })
+
+
+@app.route("/ask_gemini", methods=["POST"])
+def ask_gemini():
+    if 'user_id' not in session:
+        return jsonify({"reply": "Not logged in"}), 401
+    if model is None:
+        return jsonify({"reply": "AI 助教尚未設定。"}), 500
+    data = request.get_json()
+    if not data or 'prompt' not in data or 'current_question' not in data:
+        print(f"Invalid request data: {data}")
+        return jsonify({"reply": "錯誤：缺少提示或題目內容。"}), 400
+
+    user_prompt = data.get('prompt')
+    current_question = data.get('current_question')
+    current_skill_id = session.get('current_skill_id', 'unknown')
+    current_skill_display_name = SKILL_ENGINE.get(current_skill_id, {}).get('display_name', '數學')
+
+    system_instruction = f"""
+    你是一位專業且有耐心的高中數學家教，專門輔導資源班的學生。
+    學生的目標是段考及格。請用繁體中文回答。
+    ... (省略提示詞內容) ...
+    學生的問題是：「{user_prompt}」
+    當前題目是：「{current_question}」
+    請根據上述規則，提供你的回答：
+    """
+    try:
+        response = model.generate_content(system_instruction)
+        ai_reply = response.text
+    except ResourceExhausted as e:
+        print(f"Gemini API 配額超限: {e}")
+        return jsonify({"reply": "抱歉，AI 請求過多，請稍後再試（約 30 秒）。"}), 429
+    except Exception as e:
+        print(f"Gemini API 呼叫失敗: {e}")
+        ai_reply = "抱歉，助教現在有點忙... 請稍後再試。"
+    return jsonify({"reply": ai_reply})
+
+@app.route("/analyze_handwriting", methods=["POST"])
+def analyze_handwriting():
+    if 'user_id' not in session: return jsonify({"reply": "Not logged in"}), 401
+    if model is None: return jsonify({"reply": "AI 助教尚未設定。"}), 500
+
+    # --- 獲取 Session 中的情境 ---
+    user_id = session.get('user_id')
+    current_skill_id_str = session.get('current_skill_id', 'unknown')
+    current_question = session.get('current_question_text', '未知題目')
+    current_answer = session.get('current_answer')  # 可能是 None
+    current_inequality_string = session.get('current_inequality_string')  # 可能是 None
+    current_skill_display_name = SKILL_ENGINE.get(current_skill_id_str, {}).get('display_name', '數學')
+    
+    # --- 獲取前端傳來的資料 ---
+    data = request.get_json()
+    if not data: return jsonify({"reply": "錯誤：未收到 JSON 資料。"}), 400
+    image_data_url = data.get('image_data_url')
+    
+    if not image_data_url:
+        print("錯誤: 前端未發送 image_data_url")
+        return jsonify({"reply": "錯誤：缺少圖片資料。"}), 400
+
+    try:
+        # 2. 轉換圖片
+        header, encoded = image_data_url.split(",", 1)
+        image_data = base64.b64decode(encoded)
+        image = Image.open(io.BytesIO(image_data))
+
+        # 3. ★★★ 根據 current_inequality_string 是否存在，決定提示詞 ★★★
+        prompt_parts = []; is_graph_question = bool(current_inequality_string)
+
+        if is_graph_question:
+            # --- 提示詞：畫圖題 (二元一次不等式) ---
+            print(f"收到畫圖題分析請求: {current_inequality_string}")
+            # ★ 完整提示詞範例（請根據需要調整）
+            graph_prompt = f"""
+            你是一位數學老師，正在檢查學生的二元一次不等式圖示。
+            不等式: {current_inequality_string}
+            學生畫的圖片: [上傳的圖片]
+            
+            規則:
+            1. 檢查學生是否正確畫出直線 (ax + by = c)。
+            2. 檢查陰影區域是否正確 (例如 > 為一側，< 為另一側；實線/虛線)。
+            3. 如果正確，回覆格式: "CORRECT: 很好！你正確畫出了直線和陰影區域。"
+            4. 如果錯誤，回覆格式: "INCORRECT: 這裡有問題：(具體錯誤說明)，請再試一次。"
+            5. 用繁體中文，鼓勵性語言。
+            """
+            prompt_parts = [graph_prompt, image]
+        else:
+            # --- 提示詞：計算題 (通用) ---
+            print(f"收到計算題分析請求 (題目: {current_question})")
+            # ★ 完整提示詞範例（請根據需要調整）
+            calc_prompt = f"""
+            你是一位數學老師，正在檢查學生的手寫計算。
+            題目: {current_question}
+            學生手寫答案: [上傳的圖片]
+            
+            規則:
+            1. 判斷答案是否正確，並給出詳細解釋。
+            2. 用繁體中文，耐心解釋錯誤點。
+            3. 回覆格式: "你的答案是 [正確/錯誤]，解釋: (詳細說明)。"
+            """
+            prompt_parts = [calc_prompt, image]
+
+        # 4. 呼叫 Gemini API with retry logic
+        print("正在呼叫 Gemini API...")
+        max_retries = 3
+        retry_delay = 30  # 增加到 30 秒以符合免費階層
+        for attempt in range(max_retries):
+            try:
+                response = model.generate_content(prompt_parts)
+                ai_reply = response.text.strip()
+                print(f"Gemini 回覆: {ai_reply}")
+                break  # Success
+            except ResourceExhausted as e:
+                print(f"Gemini API 配額超限: {e}")
+                if attempt < max_retries - 1:
+                    print(f"等待 {retry_delay} 秒後重試... (第 {attempt + 1} 次)")
+                    time.sleep(retry_delay)
+                    retry_delay += 10  # Linear backoff
+                else:
+                    print("達到最大重試次數，無法完成請求。")
+                    ai_feedback_to_student = "AI 分析請求過多，請等待 1 分鐘後再試。提示：免費階層每分鐘僅限 2 次請求。"
+                    return jsonify({
+                        "reply": ai_feedback_to_student,
+                        "is_graph_correct": False,
+                        "demote_to_skill_id": None
+                    }), 429
+            except Exception as e:
+                print(f"其他 Gemini 錯誤: {e}")
+                raise  # 重新拋出以進入外層 except
+
+        # 5. 解讀 AI 回覆並判斷對錯 (只對畫圖題更新進度)
+        is_graph_correct = False
+        ai_feedback_to_student = ai_reply
+        demote_to_skill_id = None
+
+        if is_graph_question:
+            # --- 處理畫圖題的回覆 ---
+            if ai_reply.startswith("CORRECT:"):
+                is_graph_correct = True
+            elif ai_reply.startswith("INCORRECT:"):
+                is_graph_correct = False
+            else:
+                is_graph_correct = False
+                ai_feedback_to_student = f"AI 回覆格式錯誤...\n({ai_reply})\n請檢查提示詞格式。"
+
+            # --- 更新資料庫進度 (只針對畫圖題) ---
+            try:
+                skill = Skill.query.filter_by(skill_id=current_skill_id_str).first()
+                if skill and user_id:
+                    progress = UserProgress.query.filter_by(user_id=user_id, skill_id=skill.id).first()
+                    if not progress:
+                        progress = UserProgress(user_id=user_id, skill_id=skill.id)
+                        db.session.add(progress)
+                    progress.total_attempted += 1
+                    if is_graph_correct:
+                        progress.consecutive_correct += 1
+                        progress.total_correct += 1
+                        progress.consecutive_incorrect = 0
+                    else:
+                        progress.consecutive_correct = 0
+                        progress.consecutive_incorrect += 1
+                        if progress.consecutive_incorrect >= DEMOTION_THRESHOLD and skill.prerequisite_skill_id:
+                            demote_to_skill_id = skill.prerequisite_skill_id
+                            prereq_skill = Skill.query.filter_by(skill_id=demote_to_skill_id).first()
+                            prereq_name = prereq_skill.display_name if prereq_skill else "基礎單元"
+                            ai_feedback_to_student += f"\n\n錯誤次數較多，建議您先複習「{prereq_name}」。"
+                    db.session.commit()
+                    print(f"畫圖題進度已更新: correct={is_graph_correct}, demote={demote_to_skill_id}")
+                else:
+                    print("警告: 找不到技能或用戶，無法更新畫圖題進度")
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error updating progress: {e}")
+
+    except Exception as e:
+        print(f"Gemini API 或圖片處理失敗: {e}")
+        is_graph_correct = False
+        ai_feedback_to學生 = f"分析失敗：{str(e)[:100]}... 請檢查圖片或稍後再試。"
+        demote_to_skill_id = None
+
+    # 7. 回傳結果給前端
+    print(f"回傳給前端: reply='{ai_feedback_to_student}', is_graph_correct={is_graph_correct}, demote={demote_to_skill_id}")
+    return jsonify({
+        "reply": ai_feedback_to_student,
+        "is_graph_correct": is_graph_correct,
+        "demote_to_skill_id": demote_to_skill_id
+    })
+
+# ==============================================================================
+# 8. Application Runner
+# ==============================================================================
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all() # 確保所有資料表都建立
+        initialize_skills() # 同步技能列表
+    print("Starting Flask app...")
+    app.run(debug=True)

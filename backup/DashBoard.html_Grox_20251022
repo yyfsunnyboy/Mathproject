@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>學習儀表板 - 功文數學</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            background-color: #f4f7f6; 
+            margin: 0; 
+        }
+        .navbar {
+            background-color: #333;
+            color: white;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .navbar a {
+            color: white;
+            text-decoration: none;
+        }
+        .navbar .logo {
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        .container {
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        h2 {
+            color: #333;
+        }
+        .alert { 
+            padding: 15px; 
+            margin-bottom: 20px; 
+            border-radius: 4px; 
+            background-color: #d4edda; 
+            color: #155724; 
+            border: 1px solid #c3e6cb;
+        }
+        .alert-warning {
+            background-color: #fff3cd; color: #856404; border-color: #ffeeba;
+        }
+        .skill-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .skill-card {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        .skill-card h3 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        .skill-card p {
+            font-size: 0.9em;
+            color: #555;
+            flex-grow: 1; /* 讓描述佔滿空間 */
+        }
+        .progress-info {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 15px;
+        }
+        .progress-info strong {
+            color: #1a73e8;
+            font-size: 1.2em;
+        }
+        .btn-practice {
+            display: block;
+            text-align: center;
+            background-color: #28a745;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            text-decoration: none;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        .btn-practice:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="navbar">
+        <a href="{{ url_for('dashboard') }}" class="logo">
+            功文數學 ( 歡迎, <strong>{{ username }}</strong>！ )
+        </a>
+        <a href="{{ url_for('logout') }}">登出</a>
+    </div>
+
+    <div class="container">
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              {% if category == 'success' or category == 'warning' %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <h2>學習儀表板</h2>
+        <p>請選擇您今天要練習的單元：</p>
+
+        <div class="skill-grid">
+            {% for data in dashboard_data %}
+            <div class="skill-card">
+                <h3>{{ data.skill.display_name }}</h3>
+                <p>{{ data.skill.description }}</p>
+                <div class="progress-info">
+                    連續答對：<strong>{{ data.consecutive_correct }}</strong> 題<br>
+                    總嘗試次數：{{ data.total_attempted }} 題
+                </div>
+                <a href="{{ url_for('practice', skill_id=data.skill.skill_id) }}" class="btn-practice">  <!-- ★ 修正：改成 'practice' -->
+                    開始練習
+                </a>
+            </div>
+            {% endfor %}
+            </div> </div> </body>
+</html>
