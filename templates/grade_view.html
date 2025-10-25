@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ grade_name }} - 大單元</title>
+    <!-- 沿用 dashboard.html 的 CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* (您可以複製 dashboard.html 的 <style> 標籤內容到這裡，或使用外部 CSS) */
+        body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; }
+        .navbar { background-color: #333; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .navbar a { color: white; text-decoration: none; }
+        .navbar .logo { font-weight: bold; font-size: 1.2em; }
+        .container { max-width: 900px; margin: 20px auto; padding: 20px; }
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
+        .card { background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); padding: 20px; transition: transform 0.2s; }
+        .card:hover { transform: translateY(-5px); }
+        .card h3 { margin: 0; color: #333; }
+        .card-link { text-decoration: none; color: inherit; }
+        .breadcrumb { margin-bottom: 20px; font-size: 0.9em; color: #555; }
+        .breadcrumb a { color: #007bff; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="{{ url_for('dashboard') }}" class="logo">功文數學</a>
+        <a href="{{ url_for('logout') }}">登出</a>
+    </div>
+
+    <div class="container">
+        <!-- 麵包屑導覽 -->
+        <div class="breadcrumb">
+            <a href="{{ url_for('dashboard') }}">儀表板</a> &gt; 
+            <strong>{{ grade_name }}</strong>
+        </div>
+        
+        <h2>{{ grade_name }}</h2>
+        <p>請選擇您要練習的大單元：</p>
+
+        <div class="card-grid">
+            {% for unit in main_units %}
+                <!-- 點擊後會連到 /unit/多項式函數 -->
+                <a href="{{ url_for('show_unit', main_unit_name=unit) }}" class="card-link">
+                    <div class="card">
+                        <h3>{{ unit }}</h3>
+                    </div>
+                </a>
+            {% else %}
+                <p>此年級下沒有大單元。</p>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>

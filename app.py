@@ -57,7 +57,7 @@ class Skill(db.Model):
     name = db.Column(db.String(100), unique=True, nullable=False)
     display_name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.String(255))
-    
+    main_unit = db.Column(db.String(100), nullable=True) # <-- 新增這行
     # vvvv 確保您已經加上這兩行 vvvv
     school_type = db.Column(db.String(20), nullable=True, default='共同')
     grade_level = db.Column(db.String(20), nullable=True, default='國中')
@@ -563,26 +563,113 @@ def home():
         return redirect(url_for('login'))
     return redirect(url_for('dashboard'))
 
-@app.route("/dashboard")
-def dashboard():
+# ( ... dashboard 函式的正下方 ... )
+
+@app.route('/grade/<grade_name>')
+def show_grade(grade_name):
+    """ 
+    [新頁面] 顯示特定年級的所有「大單元」 
+    例如： /grade/十年級
+    """
     if 'user_id' not in session:
-        flash("請先登入！", "warning")
         return redirect(url_for('login'))
+    
+    # 查詢該年級下所有不重複的「大單元」
+    try:
+        units_query = db.session.query(Skill.main_unit).filter(Skill.grade_level == grade_name).distinct().all()
+        main_units = [u[0] for u in units_query if u[0] is not None]
+    except Exception as e:
+        print(f"查詢 {grade_name} 的大單元時出錯: {e}")
+        main_units = []
+        flash("讀取單元時發生錯誤。", "warning")
+
+    # 我們會建立一個新的 HTML 模板來顯示
+    return render_template('grade_view.html', 
+                           grade_name=grade_name, 
+                           main_units=main_units)
+
+# (請找到您 app.py 中現有的 dashboard 函式...)
+@app.route('/dashboard')
+def dashboard():
+    """ 儀表板 - 現在改為顯示所有「年級」 """
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    user = User.query.get(session['user_id'])
+    if not user:
+        flash("找不到用戶資料，請重新登入。", "warning")
+        return redirect(url_for('login'))
+
+    # 從 Skill 表中查詢所有不重複的「年級」
+    try:
+        # 查詢所有不重複的 grade_level
+        grades_query = db.session.query(Skill.grade_level).distinct().all()
+        
+        # 將 [( '十年級',), ('十一年級',)] 轉成 ['十年級', '十一年級']
+        grades = [g[0] for g in grades_query if g[0] is not None]
+        
+        # 這裡可以手動排序 (如果您的年級不是照順序)
+        # 例如： grades.sort(key=lambda g: 10 if '十' in g else (11 if '十一' in g else 12))
+        
+    except Exception as e:
+        print(f"查詢年級時出錯: {e}")
+        grades = []
+        flash("讀取課綱時發生錯誤，請稍後再試。", "warning")
+
+    # 注意：我們傳送的變數改為 grades
+    return render_template('dashboard.html', 
+                           username=user.username, 
+                           grades=grades) 
+# ( ... 取代到這裡為止 ... )
+# ( ... dashboard 函式的正下方 ... )
+
+# ( ... 找到您 app.py 中的 show_unit ... )
+@app.route('/unit/<path:main_unit_name>')
+def show_unit(main_unit_name):
+    """ 
+    [新頁面] 顯示特定大單元的所有「小單元」 (包含使用者進度)
+    """
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
     user_id = session['user_id']
-    all_skills = Skill.query.all()
-    user_progresses = UserProgress.query.filter_by(user_id=user_id).all()
-    progress_map = {p.skill_id: p for p in user_progresses}
-    dashboard_data = []
-    for skill in all_skills:
-        progress = progress_map.get(skill.id)
-        dashboard_data.append({
-            'skill': skill,
-            'consecutive_correct': progress.consecutive_correct if progress else 0,
-            'total_attempted': progress.total_attempted if progress else 0
-        })
-    return render_template('dashboard.html',
-                           dashboard_data=dashboard_data,
-                           username=session.get('username'))
+
+    # 查詢該大單元下所有的「小單元」(即 Skills)
+    try:
+        sub_units_query = Skill.query.filter(Skill.main_unit == main_unit_name).order_by(Skill.id).all()
+        
+        # --- vvv 這就是我們加回來的「進度查詢」邏輯 vvv ---
+        
+        # 1. 取得這個用戶的所有進度
+        user_progresses = UserProgress.query.filter_by(user_id=user_id).all()
+        # 2. 轉成字典方便查詢 { skill_id: progress_object }
+        progress_map = {p.skill_id: p for p in user_progresses}
+        
+        # 3. 建立要傳到前端的資料包
+        sub_units_data = []
+        for skill in sub_units_query:
+            progress = progress_map.get(skill.id)
+            sub_units_data.append({
+                'skill': skill,
+                'consecutive_correct': progress.consecutive_correct if progress else 0,
+                'total_attempted': progress.total_attempted if progress else 0
+            })
+        # --- ^^^ 進度查詢邏輯結束 ^^^ ---
+
+    except Exception as e:
+        print(f"查詢 {main_unit_name} 的小單元時出錯: {e}")
+        sub_units_data = []
+        flash("讀取小單元時發生錯誤。", "warning")
+        
+    # 從第一個小單元反查年級，用來顯示麵包屑導覽
+    current_grade = sub_units_query[0].grade_level if sub_units_query else "..."
+
+    # 我們會建立第二個新的 HTML 模板來顯示
+    return render_template('unit_view.html',
+                           grade_name=current_grade,
+                           main_unit_name=main_unit_name,
+                           sub_units_data=sub_units_data) # <--- 注意，變數名稱改了
+# ( ... 取代到這裡為止 ... )
 
 @app.route("/practice/<string:skill_id>")
 def practice(skill_id):
@@ -882,6 +969,6 @@ def analyze_handwriting():
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()  # 確保所有資料表都建立
-        initialize_skills()  # 同步技能列表
+        #initialize_skills()  # 同步技能列表
     print("Starting Flask app...")
     app.run(debug=True)
