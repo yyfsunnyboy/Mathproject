@@ -535,13 +535,14 @@ def api_adv_rag_chat():
                 uq = f"[目前題目]\n{question_text}\n\n{uq}"
             if family_id:
                 uq = f"[family_id: {family_id}]\n{uq}"
+            routing_label = first.get("routing", "Adaptive-AdvRAG")
             prompt, _source = compose_prompt(
                 task_key="rag_tutor_prompt",
                 query=uq,
                 ch_name=ch_name,
                 family_name_block=family_name_block,
                 subskill_text=subskill_text,
-                route_label="Adaptive-AdvRAG",
+                route_label=routing_label,
             )
             result = _adv_rag_invoke_tutor(prompt, provider)
             return jsonify(result)

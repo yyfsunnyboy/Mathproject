@@ -334,34 +334,40 @@ def _render_adv_rag_prompt_via_registry(
     question_text: str = "",
     family_id: str = "",
 ) -> str:
+    ch_name = "多個相關單元"
+    family_name_block = ""
+    if retrieved_skills and len(retrieved_skills) == 1:
+        ch_name = retrieved_skills[0].get("chinese_name", "")
+        family_name = retrieved_skills[0].get('family_name', '')
+        family_name_block = f"（{family_name}）" if family_name else ""
+    elif family_id:
+        family_name_block = f"（{family_id}）"
+
     units = []
     for idx, skill in enumerate(retrieved_skills or []):
-        ch_name = skill.get("chinese_name", "")
-        fam_name = skill.get("family_name", "")
+        name = skill.get("chinese_name", "")
+        fam = skill.get("family_name", "")
         subs = skill.get("subskill_nodes", [])
-        subs_str = "、".join(_label_node(n) for n in subs) if subs else "未分類子技能"
-        units.append(f"{idx + 1}. {ch_name}（{fam_name}）: {subs_str}")
-
-    context_lines = []
-    if question_text:
-        context_lines.append("目前題目：")
-        context_lines.append(question_text)
-    if family_id:
-        context_lines.append(f"family_id: {family_id}")
-    context_lines.append(f"學生提問：{query}")
-    if units:
-        context_lines.append("可參考知識：")
-        context_lines.extend(units)
-    context_text = "\n".join(context_lines)
-
-    # Primary path: DB-configurable tutor prompt.
-    from core.prompts.registry import get_prompt_with_source
-    prompt_template, source = get_prompt_with_source("tutor_hint_prompt")
+        subs_str = "、".join(_label_node(n) for n in subs) if subs else "未分類"
+        units.append(f"{idx + 1}. {name}（{fam}）: {subs_str}")
+        
+    subskill_text = "\n".join(units) if units else "無對應知識"
     
-    prompt = prompt_template.format(
-        context=context_text,
-        question=query,
-        prereq_text="\n".join(units),
+    prompt_query = f"[目前題目]\n{question_text}\n\n[學生提問]\n{query}" if question_text else query
+
+    route_label = "Advanced RAG"
+    if retrieved_skills and "routing" in retrieved_skills[0]:
+        route_label = retrieved_skills[0]["routing"]
+
+    # Primary path: DB-configurable tutor prompt for RAG
+    from core.prompts.composer import compose_prompt
+    prompt, source = compose_prompt(
+        task_key="rag_tutor_prompt",
+        query=prompt_query,
+        ch_name=ch_name,
+        family_name_block=family_name_block,
+        subskill_text=subskill_text,
+        route_label=route_label,
     )
     return prompt, source
 
