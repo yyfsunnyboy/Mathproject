@@ -1013,52 +1013,13 @@ def get_question(item_id: int):
 @adaptive_review_bp.route('/check-handwriting', methods=['POST'])
 def check_handwriting():
     """
-    接收前端手寫板的 base64 圖片，呼叫 Gemini Vision 模型進行批改
+    接收前端手寫板的 base64 圖片，轉交共用手寫分析流程。
+    這樣 RL 複習模式會和 ai_prompt_settings 的 runtime 角色模型設定保持一致。
     """
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({'status': 'error', 'message': '無效的請求'}), 400
+        from core.routes.analysis import analyze_handwriting as shared_analyze_handwriting
 
-        image_data_url = data.get('image_base64')
-        if not image_data_url:
-            return jsonify({'status': 'error', 'message': '請先在畫布上寫字！'}), 400
-
-        question_text = data.get('question_text', '')
-        correct_answer = data.get('correct_answer', '')
-        # In adaptive review, we might not have prereq skills cleanly formatted in frontend, pass empty list
-        prerequisite_skills = []
-
-        from core.ai_analyzer import analyze
-        from core.ai_settings import get_effective_model_config
-
-        # Check API key first
-        cfg = get_effective_model_config("tutor")
-        provider = str(cfg.get("provider", "local")).strip().lower()
-        
-        # We need Gemini for vision processing (or a local vision model if supported, but typically Gemini)
-        try:
-            from core.ai_wrapper import resolve_gemini_api_key
-            api_key = resolve_gemini_api_key()
-            if not api_key and provider in ("google", "cloud", "gemini"):
-                return jsonify({'status': 'error', 'message': '未設定 Gemini API Key，無法使用手寫辨識功能。'}), 400
-        except Exception:
-            api_key = None
-
-        # Call analyze
-        result = analyze(
-            image_data_url=image_data_url,
-            context=question_text,
-            api_key=api_key,
-            prerequisite_skills=prerequisite_skills,
-            correct_answer=correct_answer
-        )
-
-        return jsonify({
-            'status': 'success',
-            'reply': result.get('reply', 'AI 無法辨識手寫內容。'),
-            'is_process_correct': result.get('is_process_correct', False)
-        }), 200
+        return shared_analyze_handwriting()
 
     except Exception as e:
         logger.error(f"❌ 手寫辨識失敗: {e}", exc_info=True)

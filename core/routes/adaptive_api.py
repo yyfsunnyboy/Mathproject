@@ -416,7 +416,18 @@ def api_adv_rag_search():
     try:
         from core.advanced_rag_engine import adv_rag_search
         results = adv_rag_search(query, top_k=5)
-        return jsonify({"results": results})
+        first = results[0] if results else {}
+        raw_routing = str(first.get("routing") or "").strip().lower()
+        routing_mode = "advanced"
+        if "naive" in raw_routing:
+            routing_mode = "naive"
+        elif "advanced" in raw_routing:
+            routing_mode = "advanced"
+        return jsonify({
+            "results": results,
+            "routing_label": routing_mode,
+            "routing_mode": routing_mode,
+        })
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -474,7 +485,7 @@ def api_adv_rag_chat():
 
     try:
         if not current_app.config.get('ADVANCED_RAG_ENABLE_AI_CHAT', True):
-            return jsonify({"reply": "目前 AI 助教已由老師關閉"})
+            return jsonify({"reply": "目前 AI 助教已由老師關閉", "prompt_key": "disabled"})
 
         if not use_rag:
             raw_prompt = query
@@ -482,6 +493,9 @@ def api_adv_rag_chat():
                 raw_prompt = f"以下是學生目前的題目：\n{question_text}\n\n學生的問題：\n{query}"
             print(f"[RAG PROMPT SELECT] Direct chat without RAG. prompt_key=direct")
             result = _adv_rag_invoke_tutor(raw_prompt, provider)
+            if isinstance(result, dict):
+                result.setdefault("prompt_key", "direct")
+                result.setdefault("rag_channel", "none")
             return jsonify(result)
 
         is_learning_intent = any(
@@ -545,6 +559,9 @@ def api_adv_rag_chat():
                 route_label=routing_label,
             )
             result = _adv_rag_invoke_tutor(prompt, provider)
+            if isinstance(result, dict):
+                result.setdefault("prompt_key", prompt_key)
+                result.setdefault("rag_channel", routing_label)
             return jsonify(result)
 
         from core.advanced_rag_engine import adv_rag_chat
@@ -556,6 +573,9 @@ def api_adv_rag_chat():
             question_text=question_text,
             family_id=family_id,
         )
+        if isinstance(result, dict):
+            result.setdefault("prompt_key", prompt_key)
+            result.setdefault("rag_channel", "Advanced RAG")
         return jsonify(result)
     except Exception as e:
         import traceback

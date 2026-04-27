@@ -1296,7 +1296,7 @@
         const LOADING_ID = 'rag-loading-msg-' + Date.now();
         try {
           // 顯示暫時的 loading 氣泡（會被後面的回覆取代）
-          addChatMessage('bot', '⏳ Advanced RAG 進階檢索中...', false, LOADING_ID);
+          addChatMessage('bot', '⏳ Naive RAG 檢索中...', false, LOADING_ID);
           
           // 1. Search Advanced RAG
           const searchResp = await fetch('/api/adaptive/adv_rag_search', {
@@ -1307,6 +1307,7 @@
           
           const searchParams = await searchResp.json();
           if (searchParams.error) throw new Error(searchParams.error);
+          addChatMessage('bot', '⏳ Naive RAG 檢索中...', false, LOADING_ID);
           
           const results = searchParams.results || [];
           let retrievedSkillsForChat = [];
@@ -1320,8 +1321,21 @@
               const familyName = item.family_name ? ` (${item.family_name})` : '';
               
               const btn = document.createElement('button');
+              const targetSkillId = String(item.skill_id || '').trim();
+              btn.type = 'button';
               btn.innerText = `${index + 1}. ${chineseName}${familyName}`;
               btn.style.cssText = 'background: #eaf1fa; color: #1565c0; border: none; border-radius: 6px; padding: 4px 8px; font-size: 1em; cursor: pointer; display: inline-block; text-align: left;';
+              if (targetSkillId) {
+                btn.title = `前往單元：${chineseName}`;
+                btn.addEventListener('click', () => {
+                  window.location.assign(`/practice/${encodeURIComponent(targetSkillId)}`);
+                });
+              } else {
+                btn.disabled = true;
+                btn.title = '目前找不到對應單元';
+                btn.style.cursor = 'not-allowed';
+                btn.style.opacity = '0.65';
+              }
               if (resultsButtons) resultsButtons.appendChild(btn);
               
               retrievedSkillsForChat.push({

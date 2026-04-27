@@ -424,7 +424,7 @@ def adv_rag_chat(
             question_text=question_text,
             family_id=family_id,
         )
-        logger.info(f"[Prompt Trace] route='/api/adaptive/adv_rag_chat' task_type='adv_rag_chat' prompt_key='tutor_hint_prompt' source='{source}' model_role='tutor'")
+        logger.info(f"[Prompt Trace] route='/api/adaptive/adv_rag_chat' task_type='adv_rag_chat' prompt_key='rag_tutor_prompt' source='{source}' model_role='tutor'")
     except Exception:
         # Keep legacy builder as fallback to avoid runtime interruption.
         prompt = _build_adv_rag_prompt(

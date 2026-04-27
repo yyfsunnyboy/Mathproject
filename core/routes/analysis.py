@@ -40,6 +40,7 @@ from core.ai_analyzer import (
     enforce_strict_mode,
 )
 from core.ai_client import call_ai, call_google_model
+from core.ai_settings import get_effective_model_config
 from core.adaptive.judge import (
     judge_answer_with_feedback,
     _as_symbolic_tolerant,
@@ -2524,8 +2525,9 @@ def analyze_handwriting():
             "If the image is blank, illegible, or has no mathematical writing, set \"expression\" to \"\". "
             "Do not invent symbols or steps that are not clearly visible."
         )
-        if ai_provider == 'google':
-            vision_cfg = dict(Config.LEGACY_MODEL_ROLES.get('vision_analyzer') or {})
+        vision_cfg = get_effective_model_config("vision_analyzer")
+        vision_provider = str(vision_cfg.get("provider", "")).strip().lower()
+        if ai_provider == 'google' and vision_provider in ('google', 'gemini'):
             rec_response = call_google_model(
                 vision_cfg,
                 recognition_prompt,
@@ -2535,6 +2537,11 @@ def analyze_handwriting():
                 verbose=False,
             )
         else:
+            if ai_provider == 'google' and vision_provider not in ('google', 'gemini'):
+                current_app.logger.info(
+                    "analyze_handwriting: provider override=google ignored because vision_analyzer runtime provider=%s",
+                    vision_provider or "unknown",
+                )
             rec_response = call_ai(
                 role="vision_analyzer",
                 prompt=recognition_prompt,
@@ -2600,8 +2607,9 @@ def analyze_handwriting():
             prompt = _handwriting_feedback_second_prompt(
                 analysis_result, question_text, question_context, prereq_text, family_id
             )
-            if ai_provider == 'google':
-                tutor_cfg = dict(Config.MODEL_ROLES.get('architect') or {})
+            tutor_cfg = get_effective_model_config("tutor")
+            tutor_provider = str(tutor_cfg.get("provider", "")).strip().lower()
+            if ai_provider == 'google' and tutor_provider in ('google', 'gemini'):
                 response = call_google_model(
                     tutor_cfg,
                     prompt,
@@ -2611,6 +2619,11 @@ def analyze_handwriting():
                     verbose=False,
                 )
             else:
+                if ai_provider == 'google' and tutor_provider not in ('google', 'gemini'):
+                    current_app.logger.info(
+                        "analyze_handwriting: provider override=google ignored because tutor runtime provider=%s",
+                        tutor_provider or "unknown",
+                    )
                 response = call_ai(
                     role="tutor",
                     prompt=prompt,
